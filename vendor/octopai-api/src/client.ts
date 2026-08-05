@@ -257,9 +257,16 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
       token,
       signal,
     )
+    // API returns _from/_to; normalize to from/to for consistent consumer contract.
+    const rawLinks = (resp.links ?? []) as unknown as Array<Record<string, unknown>>
     return {
       ...resp,
       nodes: (resp.nodes ?? []).map((n) => normalizeItem(n as Record<string, unknown>) as LineageNode),
+      links: rawLinks.map((l) => ({
+        from: String(l.from ?? l._from ?? ''),
+        to: String(l.to ?? l._to ?? ''),
+        type: l.type as string | undefined,
+      })),
     }
   }
 

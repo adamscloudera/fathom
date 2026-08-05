@@ -3,8 +3,8 @@ import { Plug, LogOut, Search, AlertCircle, CheckCircle2, RefreshCw } from 'luci
 import { clsx } from 'clsx'
 import { octopai } from '../logic/octopaiApi.ts'
 import { selectSampleKeys, analyze } from '../logic/analyzer.ts'
-import type { LineageResult, LineageDashboard } from '../logic/types.ts'
 import type { AssetItem } from '@adamscloudera/octopai-api'
+import type { LineageResult, LineageDashboard } from '../logic/types.ts'
 import { useSessionStore } from '../stores/useSessionStore.ts'
 import { useInsightsStore } from '../stores/useInsightsStore.ts'
 
@@ -182,123 +182,50 @@ export function LoginPanel() {
       }
     }
 
-    // Phase 4a: enrich nodes that lack objectName via GetLinage
+    // Phase 4: enrich nodes that lack objectName by querying lineage for them directly.
+    // When a node is the queried object (rather than a neighbor), the v2.0 API may
+    // populate its objectName in the response even if it was empty as a neighbor.
     if (!controller.signal.aborted && analyzeAbortRef.current === controller) {
-      const unnamedNodes: Array<{ ri: number; ni: number; key: string; guid: string }> = []
+      // Collect unique unnamed node keys (dedup across results)
+      const unnamedByKey = new Map<string, Array<{ ri: number; ni: number }>>()
       for (let ri = 0; ri < lineageResults.length; ri++) {
         for (let ni = 0; ni < lineageResults[ri].nodes.length; ni++) {
           const node = lineageResults[ri].nodes[ni]
           if (!node.objectName) {
-            const bareKey = node._key.includes('/') ? node._key.split('/').pop()! : node._key
-            const guid = node.objectGUID || bareKey
-            if (guid) unnamedNodes.push({ ri, ni, key: node._key, guid })
+            if (!unnamedByKey.has(node._key)) unnamedByKey.set(node._key, [])
+            unnamedByKey.get(node._key)!.push({ ri, ni })
           }
         }
       }
-      // Deduplicate by guid, cap at 20
-      const guidMap = new Map<string, Array<{ ri: number; ni: number }>>()
-      for (const { ri, ni, guid } of unnamedNodes) {
-        if (!guidMap.has(guid)) guidMap.set(guid, [])
-        guidMap.get(guid)!.push({ ri, ni })
-      }
-      console.log('[fathom 4a] unnamed nodes:', unnamedNodes.length,
-        '| unique guids:', guidMap.size,
-        '| connectionIds count:', connectionIds.length,
-        '| sample connectionIds:', connectionIds.slice(0, 5),
-        '| sample unnamed (key/guid/conn/type):', unnamedNodes.slice(0, 5).map(n => {
-          const node = lineageResults[n.ri].nodes[n.ni]
-          return { key: n.key, guid: n.guid, conn: node.connectionName, type: node.objectType }
-        })
-      )
-      const guidsToFetch = [...guidMap.keys()].slice(0, 20)
-      if (guidsToFetch.length > 0) {
-        const enriched = await Promise.allSettled(
-          guidsToFetch.map((guid) =>
-            octopai.queryObjectDetails(company, accessToken, guid, connectionIds, controller.signal)
-              .then((detail) => ({ guid, detail }))
+      const keysToQuery = [...unnamedByKey.keys()].slice(0, 20)
+      console.log('[fathom 4] unnamed nodes:', unnamedByKey.size, '| querying', keysToQuery.length)
+      if (keysToQuery.length > 0) {
+        const directResults = await Promise.allSettled(
+          keysToQuery.map((key) =>
+            octopai.queryLineage(company, accessToken, key, 1, controller.signal)
+              .then((r) => ({ key, response: r }))
           )
         )
         let enrichedCount = 0
-        for (const r of enriched) {
-          if (r.status === 'rejected') {
-            console.log('[fathom 4a] GetLinage error:', r.reason)
-            continue
-          }
-          if (!r.value.detail) continue
-          const { guid, detail } = r.value
-          console.log('[fathom 4a] resolved:', guid, '->', detail.name)
+        for (const r of directResults) {
+          if (r.status !== 'fulfilled') continue
+          const { key, response } = r.value
+          const mainKey = response.mainNode
+          // Find the queried node in the response — match by exact key or bare id
+          const bareMain = mainKey.includes('/') ? mainKey.split('/').pop()! : mainKey
+          const mainNode = response.nodes.find((n) => {
+            const bare = n._key.includes('/') ? n._key.split('/').pop()! : n._key
+            return n._key === mainKey || n._key === key || bare === bareMain || bare === key
+          })
+          if (!mainNode?.objectName) continue
           enrichedCount++
-          for (const { ri, ni } of guidMap.get(guid) ?? []) {
+          for (const { ri, ni } of unnamedByKey.get(key) ?? []) {
             const node = lineageResults[ri].nodes[ni]
-            if (detail.name) node.objectName = detail.name
-            if (detail.objectType && !node.objectType) node.objectType = detail.objectType
+            node.objectName = mainNode.objectName
+            if (mainNode.objectType && !node.objectType) node.objectType = mainNode.objectType
           }
         }
-        console.log('[fathom 4a] enriched', enrichedCount, 'of', guidsToFetch.length, 'fetched')
-      }
-    }
-
-    // Phase 4b: fallback — connection-scoped catalog fetch for nodes still missing names
-    if (!controller.signal.aborted && analyzeAbortRef.current === controller) {
-      const connNameToId = new Map<string, string>()
-      for (const a of assets) {
-        if (a.connectionName && a.connectionId && !connNameToId.has(a.connectionName)) {
-          connNameToId.set(a.connectionName, a.connectionId)
-        }
-      }
-      const gapConnIds = new Set<string>()
-      const gapNodes: Array<{ key: string; conn: string }> = []
-      for (const result of lineageResults) {
-        for (const node of result.nodes) {
-          if (!node.objectName && node.connectionName) {
-            const id = connNameToId.get(node.connectionName)
-            if (id) {
-              gapConnIds.add(id)
-              gapNodes.push({ key: node._key, conn: node.connectionName })
-            }
-          }
-        }
-      }
-      console.log('[fathom 4b] gap connections:', [...gapConnIds],
-        '| connNameToId size:', connNameToId.size,
-        '| sample map:', [...connNameToId.entries()].slice(0, 5),
-        '| gap node keys:', gapNodes.slice(0, 5).map(n => n.key)
-      )
-      const connIdsToFetch = [...gapConnIds].slice(0, 5)
-      if (connIdsToFetch.length > 0) {
-        const fetched = await Promise.allSettled(
-          connIdsToFetch.map((cid) =>
-            octopai.queryAllAssetsForConnection(company, accessToken, cid, controller.signal)
-          )
-        )
-        const suppByKey = new Map<string, AssetItem>()
-        for (const r of fetched) {
-          if (r.status !== 'fulfilled') { console.log('[fathom 4b] fetch error:', r.reason); continue }
-          console.log('[fathom 4b] fetched', r.value.length, 'assets for connection')
-          if (r.value.length > 0) {
-            const s = r.value[0]
-            console.log('[fathom 4b] sample asset _key:', s._key, '| objectName:', s.objectName, '| raw:', JSON.stringify(s).slice(0, 300))
-          }
-          for (const item of r.value) {
-            suppByKey.set(item._key, item)
-            const slash = item._key.lastIndexOf('/')
-            if (slash >= 0) suppByKey.set(item._key.slice(slash + 1), item)
-          }
-        }
-        let enrichedCount = 0
-        for (const result of lineageResults) {
-          for (const node of result.nodes) {
-            if (node.objectName) continue
-            const bare = node._key.lastIndexOf('/') >= 0 ? node._key.slice(node._key.lastIndexOf('/') + 1) : node._key
-            const supp = suppByKey.get(node._key) ?? suppByKey.get(bare)
-            if (supp?.objectName) {
-              node.objectName = supp.objectName
-              if (supp.objectType && !node.objectType) node.objectType = supp.objectType
-              enrichedCount++
-            }
-          }
-        }
-        console.log('[fathom 4b] enriched', enrichedCount, 'nodes from catalog')
+        console.log('[fathom 4] enriched', enrichedCount, 'of', keysToQuery.length)
       }
     }
 

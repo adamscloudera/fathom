@@ -161,9 +161,9 @@ export function LoginPanel() {
         reportRes.status === 'fulfilled'
       ) {
         lineageDashboard = {
-          etl: { total: etlRes.value.total.ETL, byTool: etlRes.value.total.etldetails ?? {} },
-          db: { total: dbRes.value.total.DB, byTool: dbRes.value.total.DBdetails ?? {} },
-          report: { total: reportRes.value.total.REPORT, byTool: reportRes.value.total.REPORTDETAILS ?? {} },
+          etl: { total: etlRes.value.total?.ETL ?? 0, byTool: etlRes.value.total?.etldetails ?? {} },
+          db: { total: dbRes.value.total?.DB ?? 0, byTool: dbRes.value.total?.DBdetails ?? {} },
+          report: { total: reportRes.value.total?.REPORT ?? 0, byTool: reportRes.value.total?.REPORTDETAILS ?? {} },
         }
       }
 
@@ -173,9 +173,9 @@ export function LoginPanel() {
         colReportRes.status === 'fulfilled'
       ) {
         columnDashboard = {
-          etl: { total: colEtlRes.value.total.ETL, byTool: colEtlRes.value.total.etldetails ?? {} },
-          db: { total: colDbRes.value.total.DB, byTool: colDbRes.value.total.DBdetails ?? {} },
-          report: { total: colReportRes.value.total.REPORT, byTool: colReportRes.value.total.REPORTDETAILS ?? {} },
+          etl: { total: colEtlRes.value.total?.ETL ?? 0, byTool: colEtlRes.value.total?.etldetails ?? {} },
+          db: { total: colDbRes.value.total?.DB ?? 0, byTool: colDbRes.value.total?.DBdetails ?? {} },
+          report: { total: colReportRes.value.total?.REPORT ?? 0, byTool: colReportRes.value.total?.REPORTDETAILS ?? {} },
         }
       }
     }

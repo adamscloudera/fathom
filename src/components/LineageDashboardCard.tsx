@@ -7,7 +7,7 @@ function BucketColumn({ label, bucket }: { label: string; bucket: LineageDashboa
     <div className="flex flex-col gap-2">
       <div>
         <span className="text-2xl font-bold text-foreground tabular-nums">
-          {bucket.total.toLocaleString()}
+          {(bucket.total ?? 0).toLocaleString()}
         </span>
         <p className="text-xs text-muted mt-0.5">{label}</p>
       </div>
@@ -19,7 +19,7 @@ function BucketColumn({ label, bucket }: { label: string; bucket: LineageDashboa
                 {tool}
               </span>
               <span className="tabular-nums text-muted shrink-0">
-                {count.toLocaleString()}
+                {(count ?? 0).toLocaleString()}
               </span>
             </div>
           ))}

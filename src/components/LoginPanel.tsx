@@ -182,14 +182,19 @@ export function LoginPanel() {
       }
     }
 
-    // Phase 4a: enrich nodes that lack objectName but have objectGUID via GetLinage
+    // Phase 4a: enrich nodes that lack objectName via GetLinage
+    // Uses objectGUID if present; falls back to bare _key as rid (v2.0 lineage _keys
+    // are bare UUIDs that match Octopai's internal ObjectGUID / rid field).
     if (!controller.signal.aborted && analyzeAbortRef.current === controller) {
       const guidMap = new Map<string, Array<{ resultIdx: number; nodeIdx: number }>>()
       for (let ri = 0; ri < lineageResults.length; ri++) {
         for (let ni = 0; ni < lineageResults[ri].nodes.length; ni++) {
           const node = lineageResults[ri].nodes[ni]
-          if (!node.objectName && node.objectGUID) {
-            const guid = node.objectGUID
+          if (!node.objectName) {
+            // Prefer explicit objectGUID; fall back to bare _key (strip collection/ prefix)
+            const bareKey = node._key.includes('/') ? node._key.split('/').pop()! : node._key
+            const guid = node.objectGUID || bareKey
+            if (!guid) continue
             if (!guidMap.has(guid)) guidMap.set(guid, [])
             guidMap.get(guid)!.push({ resultIdx: ri, nodeIdx: ni })
           }

@@ -169,6 +169,7 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
   // Different Octopai tenants/versions use different casings — try all known variants.
   function normalizeItem(raw: Record<string, unknown>): AssetItem {
     const rawGuid = raw.objectGUID ?? raw.ObjectGUID ?? raw.objectguid
+    const rawConnId = raw.connectionId ?? raw.ConnectionId ?? raw.connectionID ?? raw.CONNECTIONID
     return {
       ...(raw as AssetItem),
       connectionName: String(
@@ -182,6 +183,9 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
       ),
       objectName: String(raw.tableName ?? raw.TableName ?? raw.objectName ?? raw.ObjectName ?? ''),
       objectGUID: typeof rawGuid === 'string' && rawGuid ? rawGuid : undefined,
+      connectionId: typeof rawConnId === 'string' || typeof rawConnId === 'number'
+        ? String(rawConnId)
+        : undefined,
     }
   }
 

@@ -111,7 +111,7 @@ export function LoginPanel() {
         chunk.map((key) =>
           octopai.queryLineage(company, accessToken, key, 2, controller.signal).then((raw) => ({
             key,
-            raw: raw as LineageResponse & { edges?: Array<{ from: string; to: string; type?: string }> },
+            raw,
           }))
         )
       )
@@ -121,7 +121,7 @@ export function LoginPanel() {
           lineageResults.push({
             queryKey: key,
             nodes: (raw.nodes ?? []) as LineageResult['nodes'],
-            edges: raw.edges ?? raw.links ?? [],
+            edges: raw.links ?? [],
           })
         }
       }

@@ -32,9 +32,11 @@ export function selectSampleKeys(assets: AssetItem[], maxKeys = 200): string[] {
   return selected.slice(0, maxKeys)
 }
 
-function toDegreeEntry(node: LineageNodeRaw, fallbackAsset?: AssetItem): DegreeEntry {
-  const ins = node.ins ?? 0
-  const outs = node.outs ?? 0
+function toDegreeEntry(node: LineageNodeRaw, fallbackAsset?: AssetItem, inFallback = 0, outFallback = 0): DegreeEntry {
+  // Prefer API-reported values (global count across all lineage).
+  // Fall back to edge-sampled count for tenants that don't return ins/outs.
+  const ins = node.ins ?? inFallback
+  const outs = node.outs ?? outFallback
   // Use || so empty strings fall through to the next candidate
   return {
     key: node._key,
@@ -107,6 +109,8 @@ export function analyze(
     if (slash >= 0) toolByKey.set(a._key.slice(slash + 1), a.toolName)
   }
 
+  const bareKey = (k: string) => { const s = k.lastIndexOf('/'); return s >= 0 ? k.slice(s + 1) : k }
+
   // Collect best connectivity reading per unique node key
   const nodeMap = new Map<string, LineageNodeRaw>()
   for (const result of lineageResults) {
@@ -119,6 +123,19 @@ export function analyze(
     }
   }
 
+  // Compute in/out degree from sampled edges. Used when the API doesn't populate
+  // ins/outs on nodes (varies by tenant/version).
+  const edgeIn = new Map<string, number>()
+  const edgeOut = new Map<string, number>()
+  for (const result of lineageResults) {
+    for (const edge of result.edges) {
+      const f = bareKey(edge.from)
+      const t = bareKey(edge.to)
+      if (f) edgeOut.set(f, (edgeOut.get(f) ?? 0) + 1)
+      if (t) edgeIn.set(t, (edgeIn.get(t) ?? 0) + 1)
+    }
+  }
+
   function lookupAsset(key: string): AssetItem | undefined {
     const direct = assetByKey.get(key)
     if (direct) return direct
@@ -126,9 +143,15 @@ export function analyze(
     return slash >= 0 ? assetByKey.get(key.slice(slash + 1)) : undefined
   }
 
-  const allDegrees: DegreeEntry[] = [...nodeMap.values()].map((n) =>
-    toDegreeEntry(n, lookupAsset(n._key))
-  )
+  const allDegrees: DegreeEntry[] = [...nodeMap.values()].map((n) => {
+    const bk = bareKey(n._key)
+    return toDegreeEntry(
+      n,
+      lookupAsset(n._key),
+      edgeIn.get(bk) ?? edgeIn.get(n._key) ?? 0,
+      edgeOut.get(bk) ?? edgeOut.get(n._key) ?? 0,
+    )
+  })
 
   const confirmedOrphans = allDegrees
     .filter((e) => e.ins === 0 && e.outs === 0)

@@ -183,23 +183,30 @@ export function LoginPanel() {
     }
 
     // Phase 4a: enrich nodes that lack objectName via GetLinage
-    // Uses objectGUID if present; falls back to bare _key as rid (v2.0 lineage _keys
-    // are bare UUIDs that match Octopai's internal ObjectGUID / rid field).
     if (!controller.signal.aborted && analyzeAbortRef.current === controller) {
-      const guidMap = new Map<string, Array<{ resultIdx: number; nodeIdx: number }>>()
+      const unnamedNodes: Array<{ ri: number; ni: number; key: string; guid: string }> = []
       for (let ri = 0; ri < lineageResults.length; ri++) {
         for (let ni = 0; ni < lineageResults[ri].nodes.length; ni++) {
           const node = lineageResults[ri].nodes[ni]
           if (!node.objectName) {
-            // Prefer explicit objectGUID; fall back to bare _key (strip collection/ prefix)
             const bareKey = node._key.includes('/') ? node._key.split('/').pop()! : node._key
             const guid = node.objectGUID || bareKey
-            if (!guid) continue
-            if (!guidMap.has(guid)) guidMap.set(guid, [])
-            guidMap.get(guid)!.push({ resultIdx: ri, nodeIdx: ni })
+            if (guid) unnamedNodes.push({ ri, ni, key: node._key, guid })
           }
         }
       }
+      // Deduplicate by guid, cap at 20
+      const guidMap = new Map<string, Array<{ ri: number; ni: number }>>()
+      for (const { ri, ni, guid } of unnamedNodes) {
+        if (!guidMap.has(guid)) guidMap.set(guid, [])
+        guidMap.get(guid)!.push({ ri, ni })
+      }
+      console.log('[fathom 4a] unnamed nodes:', unnamedNodes.length,
+        '| unique guids:', guidMap.size,
+        '| connectionIds count:', connectionIds.length,
+        '| sample connectionIds:', connectionIds.slice(0, 5),
+        '| sample unnamed:', unnamedNodes.slice(0, 3).map(n => ({ key: n.key, guid: n.guid }))
+      )
       const guidsToFetch = [...guidMap.keys()].slice(0, 20)
       if (guidsToFetch.length > 0) {
         const enriched = await Promise.allSettled(
@@ -208,22 +215,28 @@ export function LoginPanel() {
               .then((detail) => ({ guid, detail }))
           )
         )
+        let enrichedCount = 0
         for (const r of enriched) {
-          if (r.status !== 'fulfilled' || !r.value.detail) continue
+          if (r.status === 'rejected') {
+            console.log('[fathom 4a] GetLinage error:', r.reason)
+            continue
+          }
+          if (!r.value.detail) continue
           const { guid, detail } = r.value
-          for (const { resultIdx, nodeIdx } of guidMap.get(guid) ?? []) {
-            const node = lineageResults[resultIdx].nodes[nodeIdx]
+          console.log('[fathom 4a] resolved:', guid, '->', detail.name)
+          enrichedCount++
+          for (const { ri, ni } of guidMap.get(guid) ?? []) {
+            const node = lineageResults[ri].nodes[ni]
             if (detail.name) node.objectName = detail.name
             if (detail.objectType && !node.objectType) node.objectType = detail.objectType
           }
         }
+        console.log('[fathom 4a] enriched', enrichedCount, 'of', guidsToFetch.length, 'fetched')
       }
     }
 
-    // Phase 4b: fallback — fetch connection-scoped assets for nodes still missing names
-    // Handles tenants where objectGUID is absent or GetLinage returns nothing.
+    // Phase 4b: fallback — connection-scoped catalog fetch for nodes still missing names
     if (!controller.signal.aborted && analyzeAbortRef.current === controller) {
-      // Collect connectionName→connectionId mappings for nodes still lacking names
       const connNameToId = new Map<string, string>()
       for (const a of assets) {
         if (a.connectionName && a.connectionId && !connNameToId.has(a.connectionName)) {
@@ -231,14 +244,23 @@ export function LoginPanel() {
         }
       }
       const gapConnIds = new Set<string>()
+      const gapNodes: Array<{ key: string; conn: string }> = []
       for (const result of lineageResults) {
         for (const node of result.nodes) {
           if (!node.objectName && node.connectionName) {
             const id = connNameToId.get(node.connectionName)
-            if (id) gapConnIds.add(id)
+            if (id) {
+              gapConnIds.add(id)
+              gapNodes.push({ key: node._key, conn: node.connectionName })
+            }
           }
         }
       }
+      console.log('[fathom 4b] gap connections:', [...gapConnIds],
+        '| connNameToId size:', connNameToId.size,
+        '| sample map:', [...connNameToId.entries()].slice(0, 5),
+        '| gap nodes (3):', gapNodes.slice(0, 3)
+      )
       const connIdsToFetch = [...gapConnIds].slice(0, 5)
       if (connIdsToFetch.length > 0) {
         const fetched = await Promise.allSettled(
@@ -248,13 +270,16 @@ export function LoginPanel() {
         )
         const suppByKey = new Map<string, AssetItem>()
         for (const r of fetched) {
-          if (r.status !== 'fulfilled') continue
+          if (r.status !== 'fulfilled') { console.log('[fathom 4b] fetch error:', r.reason); continue }
+          console.log('[fathom 4b] fetched', r.value.length, 'assets for connection')
+          if (r.value.length > 0) console.log('[fathom 4b] sample asset:', r.value[0])
           for (const item of r.value) {
             suppByKey.set(item._key, item)
             const slash = item._key.lastIndexOf('/')
             if (slash >= 0) suppByKey.set(item._key.slice(slash + 1), item)
           }
         }
+        let enrichedCount = 0
         for (const result of lineageResults) {
           for (const node of result.nodes) {
             if (node.objectName) continue
@@ -263,9 +288,11 @@ export function LoginPanel() {
             if (supp?.objectName) {
               node.objectName = supp.objectName
               if (supp.objectType && !node.objectType) node.objectType = supp.objectType
+              enrichedCount++
             }
           }
         }
+        console.log('[fathom 4b] enriched', enrichedCount, 'nodes from catalog')
       }
     }
 

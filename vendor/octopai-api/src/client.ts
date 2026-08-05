@@ -35,6 +35,14 @@ export type OctopaiClient = {
     type: 'ETL' | 'DB' | 'REPORT',
     signal?: AbortSignal,
   ): Promise<LineageDashboardResponse>
+  // Calls the internal E2EMainItems endpoint (E2E Column Dashboard backing API).
+  queryColumnDashboard(
+    company: string,
+    token: string,
+    connections: string[],
+    type: 'ETL' | 'DB' | 'REPORT',
+    signal?: AbortSignal,
+  ): Promise<LineageDashboardResponse>
 }
 
 const REQUEST_TIMEOUT_MS = 60_000
@@ -274,5 +282,29 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     )
   }
 
-  return { login, queryAssets, queryAllAssets, queryAssetsForIndex, queryAssetsForConnection, queryLineage, queryLineageDashboard }
+  async function queryColumnDashboard(
+    company: string,
+    token: string,
+    connections: string[],
+    type: 'ETL' | 'DB' | 'REPORT',
+    signal?: AbortSignal,
+  ): Promise<LineageDashboardResponse> {
+    return apiPost<LineageDashboardResponse>(
+      company,
+      '/api/lineage/E2EMainItems',
+      {
+        connections,
+        type,
+        mainSearch: '',
+        filters: null,
+        from: 0,
+        innerSearch: '',
+        sort: '',
+      },
+      token,
+      signal,
+    )
+  }
+
+  return { login, queryAssets, queryAllAssets, queryAssetsForIndex, queryAssetsForConnection, queryLineage, queryLineageDashboard, queryColumnDashboard }
 }

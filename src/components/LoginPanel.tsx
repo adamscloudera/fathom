@@ -140,15 +140,19 @@ export function LoginPanel() {
     setScanProgress({ phase: 'dashboard', done: 0, total: 3, startedAt: Date.now() })
 
     let lineageDashboard: LineageDashboard | null = null
+    let columnDashboard: LineageDashboard | null = null
     const connectionIds = [...new Set(
       assets.map((a) => a.connectionId).filter((id): id is string => Boolean(id))
     )]
 
     if (!controller.signal.aborted && analyzeAbortRef.current === controller) {
-      const [etlRes, dbRes, reportRes] = await Promise.allSettled([
+      const [etlRes, dbRes, reportRes, colEtlRes, colDbRes, colReportRes] = await Promise.allSettled([
         octopai.queryLineageDashboard(company, accessToken, connectionIds, 'ETL', controller.signal),
         octopai.queryLineageDashboard(company, accessToken, connectionIds, 'DB', controller.signal),
         octopai.queryLineageDashboard(company, accessToken, connectionIds, 'REPORT', controller.signal),
+        octopai.queryColumnDashboard(company, accessToken, connectionIds, 'ETL', controller.signal),
+        octopai.queryColumnDashboard(company, accessToken, connectionIds, 'DB', controller.signal),
+        octopai.queryColumnDashboard(company, accessToken, connectionIds, 'REPORT', controller.signal),
       ])
 
       if (
@@ -157,18 +161,21 @@ export function LoginPanel() {
         reportRes.status === 'fulfilled'
       ) {
         lineageDashboard = {
-          etl: {
-            total: etlRes.value.total.ETL,
-            byTool: etlRes.value.total.etldetails ?? {},
-          },
-          db: {
-            total: dbRes.value.total.DB,
-            byTool: dbRes.value.total.DBdetails ?? {},
-          },
-          report: {
-            total: reportRes.value.total.REPORT,
-            byTool: reportRes.value.total.REPORTDETAILS ?? {},
-          },
+          etl: { total: etlRes.value.total.ETL, byTool: etlRes.value.total.etldetails ?? {} },
+          db: { total: dbRes.value.total.DB, byTool: dbRes.value.total.DBdetails ?? {} },
+          report: { total: reportRes.value.total.REPORT, byTool: reportRes.value.total.REPORTDETAILS ?? {} },
+        }
+      }
+
+      if (
+        colEtlRes.status === 'fulfilled' &&
+        colDbRes.status === 'fulfilled' &&
+        colReportRes.status === 'fulfilled'
+      ) {
+        columnDashboard = {
+          etl: { total: colEtlRes.value.total.ETL, byTool: colEtlRes.value.total.etldetails ?? {} },
+          db: { total: colDbRes.value.total.DB, byTool: colDbRes.value.total.DBdetails ?? {} },
+          report: { total: colReportRes.value.total.REPORT, byTool: colReportRes.value.total.REPORTDETAILS ?? {} },
         }
       }
     }
@@ -183,6 +190,7 @@ export function LoginPanel() {
       lineagePhaseDurationMs,
       new Date().toISOString(),
       lineageDashboard,
+      columnDashboard,
     )
     setInsights(insights)
     setStatus('done', null)

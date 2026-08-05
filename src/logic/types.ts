@@ -85,4 +85,5 @@ export type FathomInsights = {
   crossToolFlows: CrossToolFlow[]
   inferredInsights: string[]
   lineageDashboard: LineageDashboard | null
+  columnDashboard: LineageDashboard | null
 }

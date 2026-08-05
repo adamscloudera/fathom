@@ -35,21 +35,41 @@ function BucketColumn({ label, bucket }: { label: string; bucket: LineageDashboa
 type Props = { insights: FathomInsights }
 
 export function LineageDashboardCard({ insights }: Props) {
-  const { lineageDashboard } = insights
-  if (!lineageDashboard) return null
+  const { lineageDashboard, columnDashboard } = insights
+  if (!lineageDashboard && !columnDashboard) return null
 
   return (
-    <div className="surface-card p-5 space-y-4 lg:col-span-2">
+    <div className="surface-card p-5 space-y-5 lg:col-span-2">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">Cross System Lineage</h2>
-        <span className="text-xs text-muted">from lineage dashboard</span>
+        <h2 className="text-sm font-semibold text-foreground">Lineage Dashboards</h2>
+        <span className="text-xs text-muted">from Octopai UI</span>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
-        <BucketColumn label="ETL objects" bucket={lineageDashboard.etl} />
-        <BucketColumn label="DB objects" bucket={lineageDashboard.db} />
-        <BucketColumn label="Report objects" bucket={lineageDashboard.report} />
-      </div>
+      {lineageDashboard && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted uppercase tracking-wide">Cross System (objects)</p>
+          <div className="grid grid-cols-3 gap-6">
+            <BucketColumn label="ETL" bucket={lineageDashboard.etl} />
+            <BucketColumn label="DB" bucket={lineageDashboard.db} />
+            <BucketColumn label="Reports" bucket={lineageDashboard.report} />
+          </div>
+        </div>
+      )}
+
+      {lineageDashboard && columnDashboard && (
+        <div className="border-t border-border" />
+      )}
+
+      {columnDashboard && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted uppercase tracking-wide">E2E Columns</p>
+          <div className="grid grid-cols-3 gap-6">
+            <BucketColumn label="ETL" bucket={columnDashboard.etl} />
+            <BucketColumn label="DB" bucket={columnDashboard.db} />
+            <BucketColumn label="Reports" bucket={columnDashboard.report} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

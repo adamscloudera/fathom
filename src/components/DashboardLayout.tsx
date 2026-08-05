@@ -29,7 +29,7 @@ export function DashboardLayout({ insights, onReset }: Props) {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {insights.lineageDashboard && <LineageDashboardCard insights={insights} />}
+        {(insights.lineageDashboard || insights.columnDashboard) && <LineageDashboardCard insights={insights} />}
         <CatalogSummaryCard insights={insights} />
         <ToolBreakdownCard insights={insights} />
         <LineageHealthCard insights={insights} />

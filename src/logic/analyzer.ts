@@ -49,6 +49,7 @@ export function analyze(
   lineagePhaseDurationMs: number,
   fetchedAt: string,
   lineageDashboard: LineageDashboard | null = null,
+  columnDashboard: LineageDashboard | null = null,
 ): FathomInsights {
   // Catalog-level analytics
   const toolCounts = new Map<string, { toolType: string; count: number }>()
@@ -159,6 +160,7 @@ export function analyze(
     crossToolFlows,
     inferredInsights,
     lineageDashboard,
+    columnDashboard,
   }
 }
 

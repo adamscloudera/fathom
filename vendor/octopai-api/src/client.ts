@@ -21,6 +21,8 @@ export type OctopaiClient = {
   queryAssetsForIndex(company: string, token: string, signal?: AbortSignal): Promise<AssetItem[]>
   // Fetch assets scoped to a single connection by its numeric Octopai connectionId.
   queryAssetsForConnection(company: string, token: string, connectionId: string, signal?: AbortSignal): Promise<AssetItem[]>
+  // Fetch all assets (up to DEFAULT_PAGE_SIZE) for a single connection — used for enrichment.
+  queryAllAssetsForConnection(company: string, token: string, connectionId: string, signal?: AbortSignal): Promise<AssetItem[]>
   queryLineage(
     company: string,
     token: string,
@@ -166,6 +168,7 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
   // The API returns connLogicName/tableName; normalize to the AssetItem contract.
   // Different Octopai tenants/versions use different casings — try all known variants.
   function normalizeItem(raw: Record<string, unknown>): AssetItem {
+    const rawGuid = raw.objectGUID ?? raw.ObjectGUID ?? raw.objectguid
     return {
       ...(raw as AssetItem),
       connectionName: String(
@@ -178,6 +181,7 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
         '',
       ),
       objectName: String(raw.tableName ?? raw.TableName ?? raw.objectName ?? raw.ObjectName ?? ''),
+      objectGUID: typeof rawGuid === 'string' && rawGuid ? rawGuid : undefined,
     }
   }
 
@@ -356,5 +360,21 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     return name ? { name, objectType } : null
   }
 
-  return { login, queryAssets, queryAllAssets, queryAssetsForIndex, queryAssetsForConnection, queryLineage, queryLineageDashboard, queryColumnDashboard, queryObjectDetails }
+  async function queryAllAssetsForConnection(
+    company: string,
+    token: string,
+    connectionId: string,
+    signal?: AbortSignal,
+  ): Promise<AssetItem[]> {
+    const resp = await apiPost<AssetsQueryResponse>(
+      company,
+      '/api/v2.0/assets/query',
+      { limit: DEFAULT_PAGE_SIZE, assetType: 2, ConnectionIds: [connectionId] },
+      token,
+      signal,
+    )
+    return normalizeResponse(resp).items
+  }
+
+  return { login, queryAssets, queryAllAssets, queryAssetsForIndex, queryAssetsForConnection, queryAllAssetsForConnection, queryLineage, queryLineageDashboard, queryColumnDashboard, queryObjectDetails }
 }

@@ -182,7 +182,7 @@ export function LoginPanel() {
       }
     }
 
-    // Phase 4: enrich nodes that lack objectName but have an objectGUID via GetLinage
+    // Phase 4a: enrich nodes that lack objectName but have objectGUID via GetLinage
     if (!controller.signal.aborted && analyzeAbortRef.current === controller) {
       const guidMap = new Map<string, Array<{ resultIdx: number; nodeIdx: number }>>()
       for (let ri = 0; ri < lineageResults.length; ri++) {
@@ -210,6 +210,55 @@ export function LoginPanel() {
             const node = lineageResults[resultIdx].nodes[nodeIdx]
             if (detail.name) node.objectName = detail.name
             if (detail.objectType && !node.objectType) node.objectType = detail.objectType
+          }
+        }
+      }
+    }
+
+    // Phase 4b: fallback — fetch connection-scoped assets for nodes still missing names
+    // Handles tenants where objectGUID is absent or GetLinage returns nothing.
+    if (!controller.signal.aborted && analyzeAbortRef.current === controller) {
+      // Collect connectionName→connectionId mappings for nodes still lacking names
+      const connNameToId = new Map<string, string>()
+      for (const a of assets) {
+        if (a.connectionName && a.connectionId && !connNameToId.has(a.connectionName)) {
+          connNameToId.set(a.connectionName, a.connectionId)
+        }
+      }
+      const gapConnIds = new Set<string>()
+      for (const result of lineageResults) {
+        for (const node of result.nodes) {
+          if (!node.objectName && node.connectionName) {
+            const id = connNameToId.get(node.connectionName)
+            if (id) gapConnIds.add(id)
+          }
+        }
+      }
+      const connIdsToFetch = [...gapConnIds].slice(0, 5)
+      if (connIdsToFetch.length > 0) {
+        const fetched = await Promise.allSettled(
+          connIdsToFetch.map((cid) =>
+            octopai.queryAllAssetsForConnection(company, accessToken, cid, controller.signal)
+          )
+        )
+        const suppByKey = new Map<string, AssetItem>()
+        for (const r of fetched) {
+          if (r.status !== 'fulfilled') continue
+          for (const item of r.value) {
+            suppByKey.set(item._key, item)
+            const slash = item._key.lastIndexOf('/')
+            if (slash >= 0) suppByKey.set(item._key.slice(slash + 1), item)
+          }
+        }
+        for (const result of lineageResults) {
+          for (const node of result.nodes) {
+            if (node.objectName) continue
+            const bare = node._key.lastIndexOf('/') >= 0 ? node._key.slice(node._key.lastIndexOf('/') + 1) : node._key
+            const supp = suppByKey.get(node._key) ?? suppByKey.get(bare)
+            if (supp?.objectName) {
+              node.objectName = supp.objectName
+              if (supp.objectType && !node.objectType) node.objectType = supp.objectType
+            }
           }
         }
       }

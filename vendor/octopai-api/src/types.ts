@@ -36,6 +36,7 @@ export type LineageNode = {
   objectName?: string
   objectType?: string
   connectionName?: string
+  objectGUID?: string
 }
 
 export type LineageResponse = {

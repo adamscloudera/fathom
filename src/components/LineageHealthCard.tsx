@@ -53,13 +53,20 @@ export function LineageHealthCard({ insights }: Props) {
           <p className="text-xs font-medium text-muted mb-1.5">Orphaned objects (sample)</p>
           <div className="space-y-1">
             {(() => {
-              // Split into named (have at least one identifying field) and anonymous
-              const named = confirmedOrphans.filter(
-                (o) => o.objectName || o.databaseName || o.schemaName
-              )
-              const anon = confirmedOrphans.filter(
-                (o) => !o.objectName && !o.databaseName && !o.schemaName
-              )
+              // Octopai uses "Unknown" / "UNKNOWN" / "-1" as placeholder values for
+              // tools (Tableau, COGNOS) that have no traditional DB/schema concept.
+              const isPlaceholder = (v?: string) =>
+                !v || v.toLowerCase() === 'unknown' || v === '-1'
+              const labelParts = (o: { databaseName: string; schemaName: string; objectName: string }) =>
+                [o.databaseName, o.schemaName, o.objectName].filter(
+                  (v) => v && !isPlaceholder(v)
+                )
+              const hasName = (o: typeof confirmedOrphans[number]) =>
+                labelParts(o).length > 0
+
+              // Split into named (have at least one real identifying field) and anonymous
+              const named = confirmedOrphans.filter(hasName)
+              const anon = confirmedOrphans.filter((o) => !hasName(o))
 
               // Group anonymous by "ConnectionName · ObjectType"
               const anonGroups = new Map<string, number>()
@@ -71,7 +78,7 @@ export function LineageHealthCard({ insights }: Props) {
               return (
                 <>
                   {named.slice(0, 5).map((o) => {
-                    const parts = [o.databaseName, o.schemaName, o.objectName].filter(Boolean)
+                    const parts = labelParts(o)
                     const label = parts.join('.')
                     return (
                       <div key={o.key} className="flex items-center gap-2 text-xs">

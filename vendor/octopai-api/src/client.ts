@@ -29,7 +29,7 @@ export type OctopaiClient = {
 }
 
 const REQUEST_TIMEOUT_MS = 60_000
-const DEFAULT_PAGE_SIZE = 1_000
+const DEFAULT_PAGE_SIZE = 10_000
 
 // Merge an external AbortSignal into a locally-owned controller so a single
 // controller can gate both timeout and caller-initiated cancellation.

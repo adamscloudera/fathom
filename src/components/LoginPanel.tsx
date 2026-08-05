@@ -182,54 +182,6 @@ export function LoginPanel() {
       }
     }
 
-    // Phase 4: enrich nodes that lack objectName by querying lineage for them directly.
-    // When a node is the queried object (rather than a neighbor), the v2.0 API may
-    // populate its objectName in the response even if it was empty as a neighbor.
-    if (!controller.signal.aborted && analyzeAbortRef.current === controller) {
-      // Collect unique unnamed node keys (dedup across results)
-      const unnamedByKey = new Map<string, Array<{ ri: number; ni: number }>>()
-      for (let ri = 0; ri < lineageResults.length; ri++) {
-        for (let ni = 0; ni < lineageResults[ri].nodes.length; ni++) {
-          const node = lineageResults[ri].nodes[ni]
-          if (!node.objectName) {
-            if (!unnamedByKey.has(node._key)) unnamedByKey.set(node._key, [])
-            unnamedByKey.get(node._key)!.push({ ri, ni })
-          }
-        }
-      }
-      const keysToQuery = [...unnamedByKey.keys()].slice(0, 20)
-      console.log('[fathom 4] unnamed nodes:', unnamedByKey.size, '| querying', keysToQuery.length)
-      if (keysToQuery.length > 0) {
-        const directResults = await Promise.allSettled(
-          keysToQuery.map((key) =>
-            octopai.queryLineage(company, accessToken, key, 1, controller.signal)
-              .then((r) => ({ key, response: r }))
-          )
-        )
-        let enrichedCount = 0
-        for (const r of directResults) {
-          if (r.status !== 'fulfilled') continue
-          const { key, response } = r.value
-          const mainKey = response.mainNode
-          if (!mainKey) continue
-          // Find the queried node in the response — match by exact key or bare id
-          const bareMain = mainKey.includes('/') ? mainKey.split('/').pop()! : mainKey
-          const mainNode = response.nodes.find((n) => {
-            const bare = n._key.includes('/') ? n._key.split('/').pop()! : n._key
-            return n._key === mainKey || n._key === key || bare === bareMain || bare === key
-          })
-          if (!mainNode?.objectName) continue
-          enrichedCount++
-          for (const { ri, ni } of unnamedByKey.get(key) ?? []) {
-            const node = lineageResults[ri].nodes[ni]
-            node.objectName = mainNode.objectName
-            if (mainNode.objectType && !node.objectType) node.objectType = mainNode.objectType
-          }
-        }
-        console.log('[fathom 4] enriched', enrichedCount, 'of', keysToQuery.length)
-      }
-    }
-
     setScanProgress(null)
 
     const insights = analyze(

@@ -89,12 +89,22 @@ export function analyze(
     .sort((a, b) => b.count - a.count)
 
   // Lineage analytics
+  // Index assets by both their full _key and the bare id after the last '/'
+  // because the lineage API returns nodes with ArangoDB collection/id keys
+  // (e.g. "objects/abc123") while the catalog uses the bare id ("abc123").
   const assetByKey = new Map<string, AssetItem>()
-  for (const a of assets) assetByKey.set(a._key, a)
+  for (const a of assets) {
+    assetByKey.set(a._key, a)
+    const slash = a._key.lastIndexOf('/')
+    if (slash >= 0) assetByKey.set(a._key.slice(slash + 1), a)
+  }
 
   const toolByKey = new Map<string, string>()
   for (const a of assets) {
-    if (a.toolName) toolByKey.set(a._key, a.toolName)
+    if (!a.toolName) continue
+    toolByKey.set(a._key, a.toolName)
+    const slash = a._key.lastIndexOf('/')
+    if (slash >= 0) toolByKey.set(a._key.slice(slash + 1), a.toolName)
   }
 
   // Collect best connectivity reading per unique node key
@@ -109,8 +119,15 @@ export function analyze(
     }
   }
 
+  function lookupAsset(key: string): AssetItem | undefined {
+    const direct = assetByKey.get(key)
+    if (direct) return direct
+    const slash = key.lastIndexOf('/')
+    return slash >= 0 ? assetByKey.get(key.slice(slash + 1)) : undefined
+  }
+
   const allDegrees: DegreeEntry[] = [...nodeMap.values()].map((n) =>
-    toDegreeEntry(n, assetByKey.get(n._key))
+    toDegreeEntry(n, lookupAsset(n._key))
   )
 
   const confirmedOrphans = allDegrees
@@ -121,12 +138,19 @@ export function analyze(
   const topByDegree = [...withConnections].sort((a, b) => b.degree - a.degree).slice(0, MAX_TOP)
   const lowDegree = [...withConnections].sort((a, b) => a.degree - b.degree).slice(0, MAX_TOP)
 
+  function lookupTool(key: string): string | undefined {
+    const direct = toolByKey.get(key)
+    if (direct) return direct
+    const slash = key.lastIndexOf('/')
+    return slash >= 0 ? toolByKey.get(key.slice(slash + 1)) : undefined
+  }
+
   // Cross-tool flows via edges
   const crossToolMap = new Map<string, number>()
   for (const result of lineageResults) {
     for (const edge of result.edges) {
-      const fromTool = toolByKey.get(edge.from)
-      const toTool = toolByKey.get(edge.to)
+      const fromTool = lookupTool(edge.from)
+      const toTool = lookupTool(edge.to)
       if (fromTool && toTool && fromTool !== toTool) {
         const key = `${fromTool}→${toTool}`
         crossToolMap.set(key, (crossToolMap.get(key) ?? 0) + 1)

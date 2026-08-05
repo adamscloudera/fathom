@@ -94,7 +94,9 @@ export function LoginPanel() {
     }
 
     const catalogPhaseDurationMs = Date.now() - catalogStart
-    const targetSamples = Math.min(500, Math.max(50, Math.ceil(assets.length * 0.02)))
+    const toolCount = new Set(assets.map((a) => a.toolName ?? 'UNK')).size
+    // Scale sample count: at least 20 per tool or 2% of catalog, whichever is larger, capped at 500.
+    const targetSamples = Math.min(500, Math.max(toolCount * 20, Math.ceil(assets.length * 0.02)))
     const sampleKeys = selectSampleKeys(assets, targetSamples)
     const lineageStart = Date.now()
     setStatus('sampling', null)

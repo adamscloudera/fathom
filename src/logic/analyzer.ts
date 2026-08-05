@@ -7,18 +7,24 @@ import type {
 const MAX_TOP = 10
 const MAX_ORPHANS = 20
 
-export function selectSampleKeys(assets: AssetItem[], maxKeys = 50): string[] {
-  const byConn = new Map<string, string[]>()
+const MIN_SAMPLES_PER_TOOL = 10
+
+export function selectSampleKeys(assets: AssetItem[], maxKeys = 200): string[] {
+  // Group by toolName so every tool is represented, then fill proportionally.
+  // This avoids under-sampling small tools (e.g. 238-object ETL tool in 10k catalog)
+  // that would otherwise get 2-3 samples and produce false "isolated tool" positives.
+  const byTool = new Map<string, string[]>()
   for (const a of assets) {
-    const conn = a.connectionName ?? '__unknown__'
-    if (!byConn.has(conn)) byConn.set(conn, [])
-    byConn.get(conn)!.push(a._key)
+    const tool = a.toolName ?? '__unknown__'
+    if (!byTool.has(tool)) byTool.set(tool, [])
+    byTool.get(tool)!.push(a._key)
   }
-  const connCount = byConn.size || 1
-  const perConn = Math.ceil(maxKeys / connCount)
+  const toolCount = byTool.size || 1
+  const perTool = Math.max(MIN_SAMPLES_PER_TOOL, Math.ceil(maxKeys / toolCount))
   const selected: string[] = []
-  for (const keys of byConn.values()) {
-    const step = Math.max(1, Math.floor(keys.length / perConn))
+  for (const keys of byTool.values()) {
+    const quota = Math.min(perTool, keys.length)
+    const step = Math.max(1, Math.floor(keys.length / quota))
     for (let i = 0; i < keys.length && selected.length < maxKeys; i += step) {
       selected.push(keys[i])
     }
@@ -139,7 +145,7 @@ export function analyze(
   const inferredInsights = buildInferredInsights({
     toolBreakdown, distinctDatabases: dbs.size, distinctSchemas: schemas.size,
     lineageCoverageRate, lineageSampledCount: lineageResults.length,
-    confirmedOrphans, topByDegree, crossToolFlows,
+    confirmedOrphans, topByDegree, crossToolFlows, lineageDashboard,
   })
 
   return {
@@ -173,6 +179,7 @@ type InsightInputs = {
   confirmedOrphans: DegreeEntry[]
   topByDegree: DegreeEntry[]
   crossToolFlows: CrossToolFlow[]
+  lineageDashboard: LineageDashboard | null
 }
 
 function buildInferredInsights(i: InsightInputs): string[] {
@@ -220,10 +227,20 @@ function buildInferredInsights(i: InsightInputs): string[] {
     )
   }
 
-  // Isolated tools (have assets but no cross-tool edges)
+  // Isolated tools (have assets but no cross-tool edges in sample).
+  // Suppress the warning for any tool confirmed active in the Lineage Dashboard
+  // (authoritative count from the UI) — those are sampling gaps, not real isolation.
   if (i.lineageSampledCount > 0) {
     const toolsInFlows = new Set(i.crossToolFlows.flatMap((f) => [f.fromTool, f.toTool]))
-    const isolated = i.toolBreakdown.filter((t) => !toolsInFlows.has(t.toolName)).map((t) => t.toolName)
+    const toolsInDashboard = new Set<string>()
+    if (i.lineageDashboard) {
+      for (const bucket of [i.lineageDashboard.etl, i.lineageDashboard.db, i.lineageDashboard.report]) {
+        Object.keys(bucket.byTool).forEach((t) => toolsInDashboard.add(t))
+      }
+    }
+    const isolated = i.toolBreakdown
+      .filter((t) => !toolsInFlows.has(t.toolName) && !toolsInDashboard.has(t.toolName))
+      .map((t) => t.toolName)
     if (isolated.length > 0) {
       out.push(
         `No cross-tool lineage detected for: ${isolated.join(', ')}. These tools may be isolated or require additional harvesting.`

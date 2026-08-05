@@ -45,6 +45,7 @@ export type DegreeEntry = {
   connectionName: string
   databaseName: string
   schemaName: string
+  objectType: string
   degree: number
   ins: number
   outs: number

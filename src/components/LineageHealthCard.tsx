@@ -52,18 +52,30 @@ export function LineageHealthCard({ insights }: Props) {
         <div>
           <p className="text-xs font-medium text-muted mb-1.5">Orphaned objects (sample)</p>
           <div className="space-y-1">
-            {confirmedOrphans.slice(0, 5).map((o) => (
-              <div key={o.key} className="flex items-center gap-2 text-xs">
-                <span className="truncate flex-1 text-foreground font-mono" title={o.key}>
-                  {o.objectName || o.key.slice(-16)}
-                </span>
-                {o.connectionName && (
-                  <span className="text-muted shrink-0 truncate max-w-[120px]" title={o.connectionName}>
-                    {o.connectionName}
+            {confirmedOrphans.slice(0, 5).map((o) => {
+              const parts = [o.databaseName, o.schemaName, o.objectName].filter(Boolean)
+              const label = parts.length > 0
+                ? parts.join('.')
+                : o.objectType
+                  ? `(${o.objectType})`
+                  : '(unnamed object)'
+              const subtitle = o.objectType && o.objectName ? o.objectType : undefined
+              return (
+                <div key={o.key} className="flex items-center gap-2 text-xs">
+                  <span className="truncate flex-1 text-foreground font-mono" title={label}>
+                    {label}
                   </span>
-                )}
-              </div>
-            ))}
+                  <span className="text-muted shrink-0 flex gap-1.5 items-center">
+                    {subtitle && <span className="text-xs opacity-60">{subtitle}</span>}
+                    {o.connectionName && (
+                      <span className="truncate max-w-[100px]" title={o.connectionName}>
+                        {o.connectionName}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
             {confirmedOrphans.length > 5 && (
               <p className="text-xs text-muted">+{confirmedOrphans.length - 5} more</p>
             )}

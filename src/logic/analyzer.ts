@@ -38,10 +38,11 @@ function toDegreeEntry(node: LineageNodeRaw, fallbackAsset?: AssetItem): DegreeE
   // Use || so empty strings fall through to the next candidate
   return {
     key: node._key,
-    objectName: node.objectName || fallbackAsset?.objectName || node._key.slice(-12),
+    objectName: node.objectName || fallbackAsset?.objectName || '',
     connectionName: node.connectionName || fallbackAsset?.connectionName || '',
     databaseName: node.databaseName || fallbackAsset?.databaseName || '',
     schemaName: node.schemaName || fallbackAsset?.schemaName || '',
+    objectType: node.objectType || fallbackAsset?.objectType || '',
     degree: ins + outs,
     ins,
     outs,

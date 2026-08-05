@@ -205,7 +205,10 @@ export function LoginPanel() {
         '| unique guids:', guidMap.size,
         '| connectionIds count:', connectionIds.length,
         '| sample connectionIds:', connectionIds.slice(0, 5),
-        '| sample unnamed:', unnamedNodes.slice(0, 3).map(n => ({ key: n.key, guid: n.guid }))
+        '| sample unnamed (key/guid/conn/type):', unnamedNodes.slice(0, 5).map(n => {
+          const node = lineageResults[n.ri].nodes[n.ni]
+          return { key: n.key, guid: n.guid, conn: node.connectionName, type: node.objectType }
+        })
       )
       const guidsToFetch = [...guidMap.keys()].slice(0, 20)
       if (guidsToFetch.length > 0) {
@@ -259,7 +262,7 @@ export function LoginPanel() {
       console.log('[fathom 4b] gap connections:', [...gapConnIds],
         '| connNameToId size:', connNameToId.size,
         '| sample map:', [...connNameToId.entries()].slice(0, 5),
-        '| gap nodes (3):', gapNodes.slice(0, 3)
+        '| gap node keys:', gapNodes.slice(0, 5).map(n => n.key)
       )
       const connIdsToFetch = [...gapConnIds].slice(0, 5)
       if (connIdsToFetch.length > 0) {
@@ -272,7 +275,10 @@ export function LoginPanel() {
         for (const r of fetched) {
           if (r.status !== 'fulfilled') { console.log('[fathom 4b] fetch error:', r.reason); continue }
           console.log('[fathom 4b] fetched', r.value.length, 'assets for connection')
-          if (r.value.length > 0) console.log('[fathom 4b] sample asset:', r.value[0])
+          if (r.value.length > 0) {
+            const s = r.value[0]
+            console.log('[fathom 4b] sample asset _key:', s._key, '| objectName:', s.objectName, '| raw:', JSON.stringify(s).slice(0, 300))
+          }
           for (const item of r.value) {
             suppByKey.set(item._key, item)
             const slash = item._key.lastIndexOf('/')

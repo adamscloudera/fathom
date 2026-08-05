@@ -54,8 +54,8 @@ export function LineageHealthCard({ insights }: Props) {
           <div className="space-y-1">
             {confirmedOrphans.slice(0, 5).map((o) => (
               <div key={o.key} className="flex items-center gap-2 text-xs">
-                <span className="truncate flex-1 text-foreground font-mono" title={o.objectName}>
-                  {o.objectName}
+                <span className="truncate flex-1 text-foreground font-mono" title={o.key}>
+                  {o.objectName || o.key.slice(-16)}
                 </span>
                 {o.connectionName && (
                   <span className="text-muted shrink-0 truncate max-w-[120px]" title={o.connectionName}>

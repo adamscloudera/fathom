@@ -35,12 +35,13 @@ export function selectSampleKeys(assets: AssetItem[], maxKeys = 200): string[] {
 function toDegreeEntry(node: LineageNodeRaw, fallbackAsset?: AssetItem): DegreeEntry {
   const ins = node.ins ?? 0
   const outs = node.outs ?? 0
+  // Use || so empty strings fall through to the next candidate
   return {
     key: node._key,
-    objectName: node.objectName ?? fallbackAsset?.objectName ?? node._key.slice(-8),
-    connectionName: node.connectionName ?? fallbackAsset?.connectionName ?? '',
-    databaseName: node.databaseName ?? fallbackAsset?.databaseName ?? '',
-    schemaName: node.schemaName ?? fallbackAsset?.schemaName ?? '',
+    objectName: node.objectName || fallbackAsset?.objectName || node._key.slice(-12),
+    connectionName: node.connectionName || fallbackAsset?.connectionName || '',
+    databaseName: node.databaseName || fallbackAsset?.databaseName || '',
+    schemaName: node.schemaName || fallbackAsset?.schemaName || '',
     degree: ins + outs,
     ins,
     outs,

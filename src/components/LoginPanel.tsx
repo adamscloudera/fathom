@@ -94,27 +94,39 @@ export function LoginPanel() {
     }
 
     const catalogPhaseDurationMs = Date.now() - catalogStart
-    const sampleKeys = selectSampleKeys(assets)
+    const targetSamples = Math.min(500, Math.max(50, Math.ceil(assets.length * 0.02)))
+    const sampleKeys = selectSampleKeys(assets, targetSamples)
     const lineageStart = Date.now()
     setStatus('sampling', null)
     setScanProgress({ phase: 'lineage', done: 0, total: sampleKeys.length, startedAt: lineageStart })
 
     const lineageResults: LineageResult[] = []
-    for (let i = 0; i < sampleKeys.length; i++) {
+    let completed = 0
+    const CONCURRENCY = 10
+
+    for (let batch = 0; batch < sampleKeys.length; batch += CONCURRENCY) {
       if (controller.signal.aborted || analyzeAbortRef.current !== controller) break
-      setScanProgress({ phase: 'lineage', done: i, total: sampleKeys.length, startedAt: lineageStart })
-      try {
-        const raw = await octopai.queryLineage(company, accessToken, sampleKeys[i], 2, controller.signal) as LineageResponse & {
-          edges?: Array<{ from: string; to: string; type?: string }>
+      const chunk = sampleKeys.slice(batch, batch + CONCURRENCY)
+      const settled = await Promise.allSettled(
+        chunk.map((key) =>
+          octopai.queryLineage(company, accessToken, key, 2, controller.signal).then((raw) => ({
+            key,
+            raw: raw as LineageResponse & { edges?: Array<{ from: string; to: string; type?: string }> },
+          }))
+        )
+      )
+      for (const r of settled) {
+        if (r.status === 'fulfilled') {
+          const { key, raw } = r.value
+          lineageResults.push({
+            queryKey: key,
+            nodes: (raw.nodes ?? []) as LineageResult['nodes'],
+            edges: raw.edges ?? raw.links ?? [],
+          })
         }
-        lineageResults.push({
-          queryKey: sampleKeys[i],
-          nodes: (raw.nodes ?? []) as LineageResult['nodes'],
-          edges: raw.edges ?? raw.links ?? [],
-        })
-      } catch {
-        // skip failed lineage calls — partial results are better than none
       }
+      completed += chunk.length
+      setScanProgress({ phase: 'lineage', done: completed, total: sampleKeys.length, startedAt: lineageStart })
     }
 
     if (controller.signal.aborted || analyzeAbortRef.current !== controller) {

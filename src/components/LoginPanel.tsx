@@ -211,6 +211,7 @@ export function LoginPanel() {
           if (r.status !== 'fulfilled') continue
           const { key, response } = r.value
           const mainKey = response.mainNode
+          if (!mainKey) continue
           // Find the queried node in the response — match by exact key or bare id
           const bareMain = mainKey.includes('/') ? mainKey.split('/').pop()! : mainKey
           const mainNode = response.nodes.find((n) => {

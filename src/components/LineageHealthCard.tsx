@@ -52,33 +52,54 @@ export function LineageHealthCard({ insights }: Props) {
         <div>
           <p className="text-xs font-medium text-muted mb-1.5">Orphaned objects (sample)</p>
           <div className="space-y-1">
-            {confirmedOrphans.slice(0, 5).map((o) => {
-              const parts = [o.databaseName, o.schemaName, o.objectName].filter(Boolean)
-              const label = parts.length > 0
-                ? parts.join('.')
-                : o.objectType
-                  ? `(${o.objectType})`
-                  : '(unnamed object)'
-              const subtitle = o.objectType && o.objectName ? o.objectType : undefined
-              return (
-                <div key={o.key} className="flex items-center gap-2 text-xs">
-                  <span className="truncate flex-1 text-foreground font-mono" title={label}>
-                    {label}
-                  </span>
-                  <span className="text-muted shrink-0 flex gap-1.5 items-center">
-                    {subtitle && <span className="text-xs opacity-60">{subtitle}</span>}
-                    {o.connectionName && (
-                      <span className="truncate max-w-[100px]" title={o.connectionName}>
-                        {o.connectionName}
-                      </span>
-                    )}
-                  </span>
-                </div>
+            {(() => {
+              // Split into named (have at least one identifying field) and anonymous
+              const named = confirmedOrphans.filter(
+                (o) => o.objectName || o.databaseName || o.schemaName
               )
-            })}
-            {confirmedOrphans.length > 5 && (
-              <p className="text-xs text-muted">+{confirmedOrphans.length - 5} more</p>
-            )}
+              const anon = confirmedOrphans.filter(
+                (o) => !o.objectName && !o.databaseName && !o.schemaName
+              )
+
+              // Group anonymous by "ConnectionName · ObjectType"
+              const anonGroups = new Map<string, number>()
+              for (const o of anon) {
+                const groupKey = [o.connectionName || 'Unknown', o.objectType || 'Object'].join(' · ')
+                anonGroups.set(groupKey, (anonGroups.get(groupKey) ?? 0) + 1)
+              }
+
+              return (
+                <>
+                  {named.slice(0, 5).map((o) => {
+                    const parts = [o.databaseName, o.schemaName, o.objectName].filter(Boolean)
+                    const label = parts.join('.')
+                    return (
+                      <div key={o.key} className="flex items-center gap-2 text-xs">
+                        <span className="truncate flex-1 text-foreground font-mono" title={label}>
+                          {label}
+                        </span>
+                        <span className="text-muted shrink-0 flex gap-1.5 items-center">
+                          {o.objectType && <span className="opacity-60">{o.objectType}</span>}
+                          {o.connectionName && (
+                            <span className="truncate max-w-[100px]">{o.connectionName}</span>
+                          )}
+                        </span>
+                      </div>
+                    )
+                  })}
+                  {[...anonGroups.entries()].map(([groupKey, count]) => (
+                    <div key={groupKey} className="flex items-center gap-2 text-xs">
+                      <span className="truncate flex-1 text-muted italic">
+                        {count}× {groupKey} — no name metadata
+                      </span>
+                    </div>
+                  ))}
+                  {named.length > 5 && (
+                    <p className="text-xs text-muted">+{named.length - 5} more named</p>
+                  )}
+                </>
+              )
+            })()}
           </div>
         </div>
       )}

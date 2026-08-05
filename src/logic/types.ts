@@ -56,6 +56,17 @@ export type CrossToolFlow = {
   linkCount: number
 }
 
+export type LineageDashboardBucket = {
+  total: number
+  byTool: Record<string, number>
+}
+
+export type LineageDashboard = {
+  etl: LineageDashboardBucket
+  db: LineageDashboardBucket
+  report: LineageDashboardBucket
+}
+
 export type FathomInsights = {
   tenantName: string
   fetchedAt: string
@@ -73,4 +84,5 @@ export type FathomInsights = {
   lowDegree: DegreeEntry[]
   crossToolFlows: CrossToolFlow[]
   inferredInsights: string[]
+  lineageDashboard: LineageDashboard | null
 }

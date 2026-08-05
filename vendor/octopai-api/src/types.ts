@@ -44,3 +44,16 @@ export type LineageResponse = {
   depth: number
   direction: number
 }
+
+export type LineageDashboardTotal = {
+  ETL: number
+  DB: number
+  REPORT: number
+  etldetails: Record<string, number>
+  DBdetails: Record<string, number>
+  REPORTDETAILS: Record<string, number>
+}
+
+export type LineageDashboardResponse = {
+  total: LineageDashboardTotal
+}

@@ -4,6 +4,7 @@ import { ToolBreakdownCard } from './ToolBreakdownCard.tsx'
 import { LineageHealthCard } from './LineageHealthCard.tsx'
 import { TopObjectsCard } from './TopObjectsCard.tsx'
 import { InferredInsightsCard } from './InferredInsightsCard.tsx'
+import { LineageDashboardCard } from './LineageDashboardCard.tsx'
 
 type Props = {
   insights: FathomInsights
@@ -28,6 +29,7 @@ export function DashboardLayout({ insights, onReset }: Props) {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {insights.lineageDashboard && <LineageDashboardCard insights={insights} />}
         <CatalogSummaryCard insights={insights} />
         <ToolBreakdownCard insights={insights} />
         <LineageHealthCard insights={insights} />

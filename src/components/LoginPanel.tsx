@@ -3,7 +3,7 @@ import { Plug, LogOut, Search, AlertCircle, CheckCircle2, RefreshCw } from 'luci
 import { clsx } from 'clsx'
 import { octopai } from '../logic/octopaiApi.ts'
 import { selectSampleKeys, analyze } from '../logic/analyzer.ts'
-import type { LineageResult } from '../logic/types.ts'
+import type { LineageResult, LineageDashboard } from '../logic/types.ts'
 import type { AssetItem, LineageResponse } from '@adamscloudera/octopai-api'
 import { useSessionStore } from '../stores/useSessionStore.ts'
 import { useInsightsStore } from '../stores/useInsightsStore.ts'
@@ -135,6 +135,44 @@ export function LoginPanel() {
     }
 
     const lineagePhaseDurationMs = Date.now() - lineageStart
+
+    // Phase 3: read Cross System Lineage Dashboard counts via internal API
+    setScanProgress({ phase: 'dashboard', done: 0, total: 3, startedAt: Date.now() })
+
+    let lineageDashboard: LineageDashboard | null = null
+    const connectionIds = [...new Set(
+      assets.map((a) => a.connectionId).filter((id): id is string => Boolean(id))
+    )]
+
+    if (!controller.signal.aborted && analyzeAbortRef.current === controller) {
+      const [etlRes, dbRes, reportRes] = await Promise.allSettled([
+        octopai.queryLineageDashboard(company, accessToken, connectionIds, 'ETL', controller.signal),
+        octopai.queryLineageDashboard(company, accessToken, connectionIds, 'DB', controller.signal),
+        octopai.queryLineageDashboard(company, accessToken, connectionIds, 'REPORT', controller.signal),
+      ])
+
+      if (
+        etlRes.status === 'fulfilled' &&
+        dbRes.status === 'fulfilled' &&
+        reportRes.status === 'fulfilled'
+      ) {
+        lineageDashboard = {
+          etl: {
+            total: etlRes.value.total.ETL,
+            byTool: etlRes.value.total.etldetails ?? {},
+          },
+          db: {
+            total: dbRes.value.total.DB,
+            byTool: dbRes.value.total.DBdetails ?? {},
+          },
+          report: {
+            total: reportRes.value.total.REPORT,
+            byTool: reportRes.value.total.REPORTDETAILS ?? {},
+          },
+        }
+      }
+    }
+
     setScanProgress(null)
 
     const insights = analyze(
@@ -144,6 +182,7 @@ export function LoginPanel() {
       catalogPhaseDurationMs,
       lineagePhaseDurationMs,
       new Date().toISOString(),
+      lineageDashboard,
     )
     setInsights(insights)
     setStatus('done', null)
@@ -277,7 +316,9 @@ export function LoginPanel() {
                 ? scanProgress.done > 0
                   ? `Catalog: ${scanProgress.done.toLocaleString()} objects fetched…`
                   : 'Fetching catalog…'
-                : `Lineage sample: ${scanProgress.done} / ${scanProgress.total}`}
+                : scanProgress.phase === 'lineage'
+                ? `Lineage sample: ${scanProgress.done} / ${scanProgress.total}`
+                : 'Reading lineage dashboard…'}
             </span>
             <span className="font-mono text-muted tabular-nums">{elapsed}s</span>
           </div>

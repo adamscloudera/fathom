@@ -1,7 +1,7 @@
 import type { AssetItem } from '@adamscloudera/octopai-api'
 import type {
   LineageResult, LineageNodeRaw, ToolBreakdownEntry, ConnectionBreakdownEntry,
-  DegreeEntry, CrossToolFlow, FathomInsights,
+  DegreeEntry, CrossToolFlow, FathomInsights, LineageDashboard,
 } from './types.ts'
 
 const MAX_TOP = 10
@@ -48,6 +48,7 @@ export function analyze(
   catalogPhaseDurationMs: number,
   lineagePhaseDurationMs: number,
   fetchedAt: string,
+  lineageDashboard: LineageDashboard | null = null,
 ): FathomInsights {
   // Catalog-level analytics
   const toolCounts = new Map<string, { toolType: string; count: number }>()
@@ -157,6 +158,7 @@ export function analyze(
     lowDegree,
     crossToolFlows,
     inferredInsights,
+    lineageDashboard,
   }
 }
 

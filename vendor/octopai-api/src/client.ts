@@ -4,6 +4,7 @@ import type {
   AssetItem,
   LineageNode,
   LineageResponse,
+  LineageDashboardResponse,
 } from './types.ts'
 
 export type OctopaiClient = {
@@ -26,6 +27,14 @@ export type OctopaiClient = {
     depth?: number,
     signal?: AbortSignal,
   ): Promise<LineageResponse>
+  // Calls the internal GetMainScreenItems endpoint (Cross System Lineage Dashboard backing API).
+  queryLineageDashboard(
+    company: string,
+    token: string,
+    connections: string[],
+    type: 'ETL' | 'DB' | 'REPORT',
+    signal?: AbortSignal,
+  ): Promise<LineageDashboardResponse>
 }
 
 const REQUEST_TIMEOUT_MS = 60_000
@@ -245,5 +254,25 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     }
   }
 
-  return { login, queryAssets, queryAllAssets, queryAssetsForIndex, queryAssetsForConnection, queryLineage }
+  async function queryLineageDashboard(
+    company: string,
+    token: string,
+    connections: string[],
+    type: 'ETL' | 'DB' | 'REPORT',
+    signal?: AbortSignal,
+  ): Promise<LineageDashboardResponse> {
+    return apiPost<LineageDashboardResponse>(
+      company,
+      '/api/lineage/GetMainScreenItems',
+      {
+        connections,
+        mainSearch: '',
+        searches: [{ type, filter: '', from: 0 }],
+      },
+      token,
+      signal,
+    )
+  }
+
+  return { login, queryAssets, queryAllAssets, queryAssetsForIndex, queryAssetsForConnection, queryLineage, queryLineageDashboard }
 }

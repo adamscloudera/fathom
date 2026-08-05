@@ -3,7 +3,7 @@ import { create } from 'zustand'
 export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'scanning' | 'sampling' | 'done' | 'error'
 
 export type ScanProgress = {
-  phase: 'catalog' | 'lineage'
+  phase: 'catalog' | 'lineage' | 'dashboard'
   done: number
   total: number
   startedAt: number

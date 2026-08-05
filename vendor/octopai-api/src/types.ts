@@ -20,6 +20,7 @@ export type AssetItem = {
   isObjectData?: boolean  // true = actual DB object; false = ETL/mapping node
   toolName?: string       // Octopai tool identifier (e.g. 'SNOWFLAKE', 'ORACLE', 'UNK')
   toolType?: string       // asset category ('DB', 'ETL', 'REPORT')
+  objectGUID?: string     // internal Octopai UUID — present on lineage nodes
 }
 
 export type AssetsQueryResponse = {

@@ -44,6 +44,15 @@ export type OctopaiClient = {
     type: 'ETL' | 'DB' | 'REPORT',
     signal?: AbortSignal,
   ): Promise<ColumnDashboardResponse>
+  // Calls the internal GetLinage endpoint to fetch full object details by GUID.
+  // Used to enrich lineage nodes that lack objectName in the v2.0 API response.
+  queryObjectDetails(
+    company: string,
+    token: string,
+    guid: string,
+    connections: string[],
+    signal?: AbortSignal,
+  ): Promise<{ name: string; objectType: string } | null>
 }
 
 const REQUEST_TIMEOUT_MS = 60_000
@@ -319,5 +328,33 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     )
   }
 
-  return { login, queryAssets, queryAllAssets, queryAssetsForIndex, queryAssetsForConnection, queryLineage, queryLineageDashboard, queryColumnDashboard }
+  async function queryObjectDetails(
+    company: string,
+    token: string,
+    guid: string,
+    connections: string[],
+    signal?: AbortSignal,
+  ): Promise<{ name: string; objectType: string } | null> {
+    type GetLinageResponse = {
+      nodes?: Array<{
+        name?: string
+        type?: string
+        properties?: { ObjectName?: string; ObjectType?: string }
+      }>
+    }
+    const resp = await apiPost<GetLinageResponse>(
+      company,
+      '/api/lineage/GetLinage',
+      { rid: guid, connections },
+      token,
+      signal,
+    )
+    const node = resp.nodes?.[0]
+    if (!node) return null
+    const name = node.name || node.properties?.ObjectName || ''
+    const objectType = node.type || node.properties?.ObjectType || ''
+    return name ? { name, objectType } : null
+  }
+
+  return { login, queryAssets, queryAllAssets, queryAssetsForIndex, queryAssetsForConnection, queryLineage, queryLineageDashboard, queryColumnDashboard, queryObjectDetails }
 }

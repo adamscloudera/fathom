@@ -4,7 +4,7 @@ import { clsx } from 'clsx'
 import { octopai } from '../logic/octopaiApi.ts'
 import { selectSampleKeys, analyze } from '../logic/analyzer.ts'
 import type { LineageResult, LineageDashboard } from '../logic/types.ts'
-import type { AssetItem, LineageResponse } from '@adamscloudera/octopai-api'
+import type { AssetItem } from '@adamscloudera/octopai-api'
 import { useSessionStore } from '../stores/useSessionStore.ts'
 import { useInsightsStore } from '../stores/useInsightsStore.ts'
 
@@ -178,6 +178,39 @@ export function LoginPanel() {
           etl: { total: colEtlRes.value.total ?? 0, byTool: colEtlRes.value.details ?? {} },
           db: { total: colDbRes.value.total ?? 0, byTool: colDbRes.value.details ?? {} },
           report: { total: colReportRes.value.total ?? 0, byTool: colReportRes.value.details ?? {} },
+        }
+      }
+    }
+
+    // Phase 4: enrich nodes that lack objectName but have an objectGUID via GetLinage
+    if (!controller.signal.aborted && analyzeAbortRef.current === controller) {
+      const guidMap = new Map<string, Array<{ resultIdx: number; nodeIdx: number }>>()
+      for (let ri = 0; ri < lineageResults.length; ri++) {
+        for (let ni = 0; ni < lineageResults[ri].nodes.length; ni++) {
+          const node = lineageResults[ri].nodes[ni]
+          if (!node.objectName && node.objectGUID) {
+            const guid = node.objectGUID
+            if (!guidMap.has(guid)) guidMap.set(guid, [])
+            guidMap.get(guid)!.push({ resultIdx: ri, nodeIdx: ni })
+          }
+        }
+      }
+      const guidsToFetch = [...guidMap.keys()].slice(0, 20)
+      if (guidsToFetch.length > 0) {
+        const enriched = await Promise.allSettled(
+          guidsToFetch.map((guid) =>
+            octopai.queryObjectDetails(company, accessToken, guid, connectionIds, controller.signal)
+              .then((detail) => ({ guid, detail }))
+          )
+        )
+        for (const r of enriched) {
+          if (r.status !== 'fulfilled' || !r.value.detail) continue
+          const { guid, detail } = r.value
+          for (const { resultIdx, nodeIdx } of guidMap.get(guid) ?? []) {
+            const node = lineageResults[resultIdx].nodes[nodeIdx]
+            if (detail.name) node.objectName = detail.name
+            if (detail.objectType && !node.objectType) node.objectType = detail.objectType
+          }
         }
       }
     }

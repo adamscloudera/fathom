@@ -11,6 +11,7 @@ export type LineageNodeRaw = {
   connectionName?: string
   toolName?: string
   toolType?: string
+  objectGUID?: string
   ins?: number
   outs?: number
 }

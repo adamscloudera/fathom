@@ -6,6 +6,7 @@ export type {
   LineageResponse,
   LineageDashboardResponse,
   LineageDashboardTotal,
+  ColumnDashboardResponse,
 } from './types.ts'
 
 export type { OctopaiClient } from './client.ts'

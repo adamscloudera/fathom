@@ -173,9 +173,9 @@ export function LoginPanel() {
         colReportRes.status === 'fulfilled'
       ) {
         columnDashboard = {
-          etl: { total: colEtlRes.value.total?.ETL ?? 0, byTool: colEtlRes.value.total?.etldetails ?? {} },
-          db: { total: colDbRes.value.total?.DB ?? 0, byTool: colDbRes.value.total?.DBdetails ?? {} },
-          report: { total: colReportRes.value.total?.REPORT ?? 0, byTool: colReportRes.value.total?.REPORTDETAILS ?? {} },
+          etl: { total: colEtlRes.value.total ?? 0, byTool: colEtlRes.value.details ?? {} },
+          db: { total: colDbRes.value.total ?? 0, byTool: colDbRes.value.details ?? {} },
+          report: { total: colReportRes.value.total ?? 0, byTool: colReportRes.value.details ?? {} },
         }
       }
     }

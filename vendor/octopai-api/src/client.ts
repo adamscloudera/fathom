@@ -5,6 +5,7 @@ import type {
   LineageNode,
   LineageResponse,
   LineageDashboardResponse,
+  ColumnDashboardResponse,
 } from './types.ts'
 
 export type OctopaiClient = {
@@ -42,7 +43,7 @@ export type OctopaiClient = {
     connections: string[],
     type: 'ETL' | 'DB' | 'REPORT',
     signal?: AbortSignal,
-  ): Promise<LineageDashboardResponse>
+  ): Promise<ColumnDashboardResponse>
 }
 
 const REQUEST_TIMEOUT_MS = 60_000
@@ -288,8 +289,8 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     connections: string[],
     type: 'ETL' | 'DB' | 'REPORT',
     signal?: AbortSignal,
-  ): Promise<LineageDashboardResponse> {
-    return apiPost<LineageDashboardResponse>(
+  ): Promise<ColumnDashboardResponse> {
+    return apiPost<ColumnDashboardResponse>(
       company,
       '/api/lineage/E2EMainItems',
       {

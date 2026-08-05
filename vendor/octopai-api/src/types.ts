@@ -57,3 +57,11 @@ export type LineageDashboardTotal = {
 export type LineageDashboardResponse = {
   total: LineageDashboardTotal
 }
+
+// E2EMainItems uses a flat structure: total is a number, details is the per-tool breakdown
+export type ColumnDashboardResponse = {
+  type: 'ETL' | 'DB' | 'REPORT'
+  total: number
+  from: number
+  details: Record<string, number>
+}

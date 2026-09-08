@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from 'react'
-import { ScanSearch, X, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { ScanSearch, X, AlertCircle, CheckCircle2, Download } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { FathomInsights, DeepOrphanEntry } from '../logic/types.ts'
 import { useInsightsStore } from '../stores/useInsightsStore.ts'
@@ -169,6 +169,23 @@ export function OrphanedObjectsReport({ insights }: Props) {
     }
   }
 
+  function exportCsv() {
+    const headers = ['Object', 'Object Type', 'Tool', 'Tool Type', 'Connection', 'Database', 'Schema', 'Source']
+    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`
+    const rows = allOrphans.map((o) => [
+      o.objectName, o.objectType, o.toolName, o.toolType,
+      o.connectionName, o.databaseName, o.schemaName, o.source,
+    ].map(escape).join(','))
+    const csv = [headers.join(','), ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${insights.tenantName}-orphaned-objects.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   function handleCancelScan() {
     abortRef.current?.abort()
     setDeepScanStatus('idle')
@@ -266,7 +283,8 @@ export function OrphanedObjectsReport({ insights }: Props) {
       {/* Results table */}
       {allOrphans.length > 0 && (
         <div className="surface-card p-5 space-y-3">
-          {/* Filter tabs */}
+          {/* Filter tabs + export */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-1 flex-wrap">
             {(['all', 'DB', 'ETL'] as ToolFilter[])
               .filter((t) => t === 'all' || (countsByType[t] ?? 0) > 0)
@@ -287,6 +305,11 @@ export function OrphanedObjectsReport({ insights }: Props) {
                   </span>
                 </button>
               ))}
+          </div>
+          <button onClick={exportCsv} className="btn-ghost text-xs shrink-0">
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
           </div>
 
           {/* Table */}

@@ -34,6 +34,19 @@ const bareKey = (k: string) => {
   return s >= 0 ? k.slice(s + 1) : k
 }
 
+function toScanNode(node: NormalizedNode): ColumnScanNode {
+  return {
+    key: bareKey(node._key),
+    columnName: node.assetName ?? '',
+    tableName: node.objectName ?? '',
+    connectionName: node.connectionName ?? '',
+    databaseName: node.databaseName ?? '',
+    schemaName: node.schemaName ?? '',
+    toolName: node.toolName ?? '',
+    toolType: node.toolType ?? '',
+  }
+}
+
 export function useKeywordScan() {
   const { company, accessToken } = useSessionStore()
 
@@ -92,7 +105,7 @@ export function useKeywordScan() {
       return
     }
 
-    // Phase 2: lineage for each matched asset (depth 10, limit 5000 via queryLineage)
+    // Phase 2: bidirectional lineage for each matched asset (direction: 0, depth: 10)
     const initialResults: ColumnMatchResult[] = matchedAssets.map(a => ({
       key: a._key,
       columnName: a.assetName ?? '',
@@ -121,7 +134,7 @@ export function useKeywordScan() {
 
       const settled = await Promise.allSettled(
         chunk.map(a =>
-          octopai.queryLineage(company, accessToken, a._key, 10, controller.signal).then(raw => ({
+          octopai.queryLineage(company, accessToken, a._key, 10, controller.signal, 0).then(raw => ({
             key: a._key,
             raw,
           }))
@@ -133,29 +146,27 @@ export function useKeywordScan() {
         const { key, raw } = r.value
         const bk = bareKey(key)
 
-        const colNodeInfo = (nk: string): ColumnScanNode => {
-          const found = (raw.nodes ?? []).find(n => bareKey(n._key) === bareKey(nk))
-          const node = found as NormalizedNode | undefined
-          return {
-            key: bareKey(nk),
-            columnName: node?.assetName ?? '',
-            tableName: node?.objectName ?? '',
-            connectionName: node?.connectionName ?? '',
-            databaseName: node?.databaseName ?? '',
-            schemaName: node?.schemaName ?? '',
-            toolName: node?.toolName ?? '',
-            toolType: node?.toolType ?? '',
-          }
-        }
+        const links = raw.links ?? []
+        const allFrom = new Set(links.map(e => bareKey(e.from)))
+        const allTo = new Set(links.map(e => bareKey(e.to)))
 
-        const upstream: ColumnScanNode[] = []
-        const downstream: ColumnScanNode[] = []
-        for (const edge of (raw.links ?? [])) {
-          const fromBk = bareKey(edge.from)
-          const toBk = bareKey(edge.to)
-          if (toBk === bk && fromBk !== bk) upstream.push(colNodeInfo(edge.from))
-          if (fromBk === bk && toBk !== bk) downstream.push(colNodeInfo(edge.to))
-        }
+        // Upstream: nodes that push data (appear as _from) but receive nothing (_not_ in allTo)
+        // These are the leaf sources — the original data origins.
+        const upstream: ColumnScanNode[] = (raw.nodes ?? [])
+          .filter(n => {
+            const k = bareKey((n as NormalizedNode)._key)
+            return k !== bk && allFrom.has(k) && !allTo.has(k)
+          })
+          .map(n => toScanNode(n as NormalizedNode))
+
+        // Downstream: nodes that receive data (_to) but push nothing (_not_ in allFrom)
+        // These are the leaf consumers — the terminal destinations.
+        const downstream: ColumnScanNode[] = (raw.nodes ?? [])
+          .filter(n => {
+            const k = bareKey((n as NormalizedNode)._key)
+            return k !== bk && allTo.has(k) && !allFrom.has(k)
+          })
+          .map(n => toScanNode(n as NormalizedNode))
 
         const dedup = (nodes: ColumnScanNode[]) => {
           const seen = new Set<string>()

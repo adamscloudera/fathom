@@ -29,6 +29,7 @@ export type OctopaiClient = {
     assetKey: string,
     depth?: number,
     signal?: AbortSignal,
+    direction?: number,
   ): Promise<LineageResponse>
   // Calls the internal GetMainScreenItems endpoint (Cross System Lineage Dashboard backing API).
   queryLineageDashboard(
@@ -325,11 +326,12 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     assetKey: string,
     depth = 2,
     signal?: AbortSignal,
+    direction = 2,
   ): Promise<LineageResponse> {
     const resp = await apiPost<LineageResponse>(
       company,
       '/api/v2.0/lineage',
-      { assetKey, depth, limit: 5000, assetType: 2, direction: 2 },
+      { assetKey, depth, limit: 5000, assetType: 2, direction },
       token,
       signal,
     )

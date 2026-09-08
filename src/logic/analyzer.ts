@@ -2,7 +2,8 @@ import type { AssetItem } from '@adamscloudera/octopai-api'
 import type {
   LineageResult, LineageNodeRaw, ToolBreakdownEntry, ConnectionBreakdownEntry,
   DegreeEntry, CrossToolFlow, FathomInsights, LineageDashboard,
-  DuplicateFlowNode, DuplicateFlowGroup,
+  DuplicateFlowNode, DuplicateFlowGroup, ConnectionHealthEntry, SchemaCoverageEntry,
+  PipelineChain, PipelineDepthStats,
 } from './types.ts'
 
 const MAX_TOP = 10
@@ -210,6 +211,134 @@ export function analyze(
       targets: targetBks.map(nodeInfo),
     }))
 
+  // Connection health: per-connection lineage coverage from lineage sample
+  const connHealthMap = new Map<string, { toolName: string; toolType: string; degrees: number[] }>()
+  for (const e of allDegrees) {
+    const conn = e.connectionName || 'Unknown'
+    if (!connHealthMap.has(conn)) {
+      connHealthMap.set(conn, {
+        toolName: e.toolName ?? 'Unknown',
+        toolType: e.toolType ?? 'Unknown',
+        degrees: [],
+      })
+    }
+    connHealthMap.get(conn)!.degrees.push(e.degree)
+  }
+
+  const connectionHealth: ConnectionHealthEntry[] = [...connHealthMap.entries()]
+    .map(([connectionName, { toolName, toolType, degrees }]) => {
+      const totalSeen = degrees.length
+      const withLineage = degrees.filter((d) => d > 0).length
+      const orphanCount = totalSeen - withLineage
+      const sum = degrees.reduce((s, d) => s + d, 0)
+      const avgDegree = totalSeen > 0 ? Math.round((sum / totalSeen) * 10) / 10 : 0
+      const maxDegree = degrees.length > 0 ? Math.max(...degrees) : 0
+      const coverageRate = totalSeen > 0 ? withLineage / totalSeen : 0
+      return { connectionName, toolName, toolType, totalSeen, withLineage, orphanCount, avgDegree, maxDegree, coverageRate }
+    })
+    .sort((a, b) => a.coverageRate - b.coverageRate)
+
+  // Schema coverage: group allDegrees by (connection, database, schema) and compute lineage rate
+  const schemaCoverageMap = new Map<string, { connectionName: string; databaseName: string; schemaName: string; toolName: string; totalSeen: number; withLineage: number }>()
+  for (const e of allDegrees) {
+    const conn = e.connectionName || 'Unknown'
+    const db = e.databaseName || 'Unknown'
+    const schema = e.schemaName || 'Unknown'
+    const key = `${conn}||${db}||${schema}`
+    const existing = schemaCoverageMap.get(key)
+    if (existing) {
+      existing.totalSeen++
+      if (e.degree > 0) existing.withLineage++
+    } else {
+      schemaCoverageMap.set(key, {
+        connectionName: conn,
+        databaseName: db,
+        schemaName: schema,
+        toolName: e.toolName ?? 'Unknown',
+        totalSeen: 1,
+        withLineage: e.degree > 0 ? 1 : 0,
+      })
+    }
+  }
+
+  const schemaCoverage: SchemaCoverageEntry[] = [...schemaCoverageMap.entries()]
+    .map(([key, { connectionName, databaseName, schemaName, toolName, totalSeen, withLineage }]) => ({
+      key,
+      connectionName,
+      databaseName,
+      schemaName,
+      toolName,
+      totalSeen,
+      withLineage,
+      coverageRate: totalSeen > 0 ? withLineage / totalSeen : 0,
+    }))
+    .sort((a, b) => a.coverageRate - b.coverageRate)
+    .slice(0, 200)
+
+  // Pipeline depth: build DAG from sampled edges, then DP longest path (Kahn's)
+  const adj = new Map<string, string[]>()
+  const inDeg = new Map<string, number>()
+  const dagNodes = new Set<string>()
+
+  for (const result of lineageResults) {
+    for (const edge of result.edges) {
+      const f = bareKey(edge.from), t = bareKey(edge.to)
+      if (!f || !t || f === t) continue
+      dagNodes.add(f); dagNodes.add(t)
+      if (!adj.has(f)) adj.set(f, [])
+      adj.get(f)!.push(t)
+      inDeg.set(t, (inDeg.get(t) ?? 0) + 1)
+      if (!inDeg.has(f)) inDeg.set(f, 0)
+    }
+  }
+
+  const dist = new Map<string, number>()   // node -> longest path length TO this node
+  const prev = new Map<string, string>()   // node -> predecessor on longest path
+  const inDegCopy = new Map(inDeg)
+  const queue: string[] = []
+  for (const [k, d] of inDeg.entries()) { if (d === 0) { queue.push(k); dist.set(k, 0) } }
+
+  while (queue.length > 0) {
+    const u = queue.shift()!
+    for (const v of (adj.get(u) ?? [])) {
+      const nd = (dist.get(u) ?? 0) + 1
+      if (nd > (dist.get(v) ?? -1)) { dist.set(v, nd); prev.set(v, u) }
+      inDegCopy.set(v, (inDegCopy.get(v) ?? 1) - 1)
+      if (inDegCopy.get(v) === 0) queue.push(v)
+    }
+  }
+
+  const nodeLabel = (k: string): string => {
+    const n = nodeMap.get(k); const a = lookupAsset(k)
+    return (n && n.objectName) || (a && a.objectName) || k
+  }
+
+  const terminals = [...dist.entries()]
+    .filter(([k]) => !adj.has(k) || adj.get(k)!.length === 0)
+    .sort((a, b) => b[1] - a[1]).slice(0, 10)
+
+  const tracePath = (end: string): string[] => {
+    const path: string[] = []; let cur: string | undefined = end
+    while (cur !== undefined) { path.unshift(cur); cur = prev.get(cur) }
+    return path
+  }
+
+  const longestChains: PipelineChain[] = terminals.map(([k, depth]) => {
+    const pathKeys = tracePath(k)
+    return { depth, pathLabels: pathKeys.map(nodeLabel), sourceLabel: nodeLabel(pathKeys[0] ?? ''), targetLabel: nodeLabel(k) }
+  })
+
+  const allDistValues = [...dist.values()]
+  const depthDistribution: Record<number, number> = {}
+  for (const d of allDistValues) depthDistribution[d] = (depthDistribution[d] ?? 0) + 1
+
+  const pipelineDepth: PipelineDepthStats | null = allDistValues.length === 0 ? null : {
+    maxDepth: Math.max(...allDistValues),
+    avgDepth: Math.round((allDistValues.reduce((a, b) => a + b, 0) / allDistValues.length) * 10) / 10,
+    depthDistribution,
+    longestChains,
+  }
+
   function lookupTool(key: string): string | undefined {
     const direct = toolByKey.get(key)
     if (direct) return direct
@@ -267,6 +396,9 @@ export function analyze(
     inferredInsights,
     lineageDashboard,
     columnDashboard,
+    connectionHealth,
+    schemaCoverage,
+    pipelineDepth,
   }
 }
 

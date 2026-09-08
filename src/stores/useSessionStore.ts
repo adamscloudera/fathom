@@ -24,20 +24,27 @@ type SessionState = {
   clearSession: () => void
 }
 
+let _initialCompany = ''
+try { _initialCompany = localStorage.getItem('fathom:company') ?? '' } catch (_) {}
+
 export const useSessionStore = create<SessionState>((set) => ({
-  company: '',
+  company: _initialCompany,
   accessToken: '',
   accessExpiry: '',
   displayName: '',
   status: 'idle',
   error: null,
   scanProgress: null,
-  setConfig: (company) => set({ company }),
+  setConfig: (company) => {
+    set({ company })
+    try { localStorage.setItem('fathom:company', company) } catch (_) {}
+  },
   setTokens: ({ accessToken, accessExpiry, displayName }) =>
     set({ accessToken, accessExpiry, displayName, status: 'connected', error: null }),
   setStatus: (status, error = null) => set({ status, error }),
   setScanProgress: (scanProgress) => set({ scanProgress }),
-  clearSession: () =>
+  clearSession: () => {
+    try { localStorage.removeItem('fathom:company') } catch (_) {}
     set({
       company: '',
       accessToken: '',
@@ -46,5 +53,6 @@ export const useSessionStore = create<SessionState>((set) => ({
       status: 'idle',
       error: null,
       scanProgress: null,
-    }),
+    })
+  },
 }))

@@ -104,6 +104,43 @@ export type DeepScanProgress = {
   startedAt: number
 }
 
+export type ConnectionHealthEntry = {
+  connectionName: string
+  toolName: string
+  toolType: string
+  totalSeen: number
+  withLineage: number
+  orphanCount: number
+  avgDegree: number
+  maxDegree: number
+  coverageRate: number
+}
+
+export type SchemaCoverageEntry = {
+  key: string
+  connectionName: string
+  databaseName: string
+  schemaName: string
+  toolName: string
+  totalSeen: number
+  withLineage: number
+  coverageRate: number
+}
+
+export type PipelineChain = {
+  depth: number
+  pathLabels: string[]   // objectName of each node source-to-target
+  sourceLabel: string
+  targetLabel: string
+}
+
+export type PipelineDepthStats = {
+  maxDepth: number
+  avgDepth: number
+  depthDistribution: Record<number, number>  // depth -> chain count at that depth
+  longestChains: PipelineChain[]             // top 10 deepest
+}
+
 export type FathomInsights = {
   tenantName: string
   fetchedAt: string
@@ -125,4 +162,7 @@ export type FathomInsights = {
   inferredInsights: string[]
   lineageDashboard: LineageDashboard | null
   columnDashboard: LineageDashboard | null
+  connectionHealth: ConnectionHealthEntry[]
+  schemaCoverage: SchemaCoverageEntry[]
+  pipelineDepth: PipelineDepthStats | null
 }

@@ -10,14 +10,20 @@ import { LineageDashboardCard } from './LineageDashboardCard.tsx'
 import { OrphanedObjectsReport } from './OrphanedObjectsReport.tsx'
 import { HighImpactReport } from './HighImpactReport.tsx'
 import { DuplicateFlowsReport } from './DuplicateFlowsReport.tsx'
+import { ConnectionHealthReport } from './ConnectionHealthReport.tsx'
+import { SchemaCoverageReport } from './SchemaCoverageReport.tsx'
+import { PipelineDepthReport } from './PipelineDepthReport.tsx'
 
-type Report = 'overview' | 'orphans' | 'high-impact' | 'duplicates'
+type Report = 'overview' | 'orphans' | 'high-impact' | 'duplicates' | 'connection-health' | 'schema-coverage' | 'pipeline-depth'
 
 const REPORTS: { id: Report; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'orphans', label: 'Orphaned Objects' },
   { id: 'high-impact', label: 'High Impact' },
   { id: 'duplicates', label: 'Duplicate Flows' },
+  { id: 'connection-health', label: 'Connection Health' },
+  { id: 'schema-coverage', label: 'Schema Coverage' },
+  { id: 'pipeline-depth', label: 'Pipeline Depth' },
 ]
 
 type Props = {
@@ -84,6 +90,18 @@ export function DashboardLayout({ insights, onReset }: Props) {
 
       {activeReport === 'duplicates' && (
         <DuplicateFlowsReport insights={insights} />
+      )}
+
+      {activeReport === 'connection-health' && (
+        <ConnectionHealthReport insights={insights} />
+      )}
+
+      {activeReport === 'schema-coverage' && (
+        <SchemaCoverageReport insights={insights} />
+      )}
+
+      {activeReport === 'pipeline-depth' && (
+        <PipelineDepthReport insights={insights} />
       )}
     </div>
   )

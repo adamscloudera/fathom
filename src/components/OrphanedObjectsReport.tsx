@@ -11,13 +11,12 @@ import {
 } from '../logic/deepOrphanScan.ts'
 import type { AssetItem } from '@adamscloudera/octopai-api'
 
-type ToolFilter = 'all' | 'DB' | 'ETL' | 'REPORT'
+type ToolFilter = 'all' | 'DB' | 'ETL'
 
 const FILTER_LABELS: Record<ToolFilter, string> = {
   all: 'All',
   DB: 'Database',
   ETL: 'ETL',
-  REPORT: 'BI / Report',
 }
 
 function buildAssetMap(assets: AssetItem[]): Map<string, AssetItem> {
@@ -104,7 +103,10 @@ export function OrphanedObjectsReport({ insights }: Props) {
   const assetMap = useMemo(() => buildAssetMap(rawAssets), [rawAssets])
 
   const sampleEntries = useMemo(
-    () => sampleOrphansToEntries(insights.confirmedOrphans, assetMap),
+    () =>
+      sampleOrphansToEntries(insights.confirmedOrphans, assetMap).filter(
+        (o) => o.toolType !== 'REPORT',
+      ),
     [insights.confirmedOrphans, assetMap],
   )
 
@@ -186,7 +188,7 @@ export function OrphanedObjectsReport({ insights }: Props) {
           <div>
             <h2 className="text-sm font-semibold text-foreground">Orphaned Objects</h2>
             <p className="text-xs text-muted mt-0.5">
-              Objects with no downstream connections — nothing reads or depends on them.
+              ETL jobs and tables with no downstream connections. Reports are excluded — they are terminal nodes by definition.
             </p>
           </div>
           <span className="text-2xl font-bold tabular-nums text-foreground shrink-0">
@@ -266,7 +268,7 @@ export function OrphanedObjectsReport({ insights }: Props) {
         <div className="surface-card p-5 space-y-3">
           {/* Filter tabs */}
           <div className="flex items-center gap-1 flex-wrap">
-            {(['all', 'DB', 'ETL', 'REPORT'] as ToolFilter[])
+            {(['all', 'DB', 'ETL'] as ToolFilter[])
               .filter((t) => t === 'all' || (countsByType[t] ?? 0) > 0)
               .map((t) => (
                 <button
@@ -280,23 +282,11 @@ export function OrphanedObjectsReport({ insights }: Props) {
                   )}
                 >
                   {FILTER_LABELS[t]}
-                  {t !== 'all' && (
-                    <span className={clsx('ml-1.5 tabular-nums', filter === t ? 'opacity-80' : '')}>
-                      {countsByType[t] ?? 0}
-                    </span>
-                  )}
-                  {t === 'all' && (
-                    <span className={clsx('ml-1.5 tabular-nums', filter === t ? 'opacity-80' : '')}>
-                      {allOrphans.length}
-                    </span>
-                  )}
+                  <span className={clsx('ml-1.5 tabular-nums', filter === t ? 'opacity-80' : '')}>
+                    {t === 'all' ? allOrphans.length : (countsByType[t] ?? 0)}
+                  </span>
                 </button>
               ))}
-            {filter === 'REPORT' && (
-              <span className="text-xs text-muted ml-2">
-                BI / Report objects with no downstream are expected leaf nodes.
-              </span>
-            )}
           </div>
 
           {/* Table */}

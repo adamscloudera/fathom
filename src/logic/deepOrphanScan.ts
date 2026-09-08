@@ -13,16 +13,12 @@ const bareKey = (k: string): string => {
   return s >= 0 ? k.slice(s + 1) : k
 }
 
-// Prioritize DB objects (most actionable orphans), then REPORT, then unknown.
-// ETL objects are excluded: by CDL's lineage model, ETL jobs always point at their
-// output tables, so ETL with no outbound is a data-quality anomaly, not a coverage gap.
+// Only scan DB (tables/views) and ETL (pipeline jobs) — reports are terminal nodes
+// by definition and will never have downstream connections.
 export function selectDeepScanCandidates(assets: AssetItem[]): AssetItem[] {
-  const db = assets.filter((a) => a.toolType === 'DB')
-  const report = assets.filter((a) => a.toolType === 'REPORT')
-  const other = assets.filter(
-    (a) => a.toolType !== 'DB' && a.toolType !== 'ETL' && a.toolType !== 'REPORT',
-  )
-  return [...db, ...report, ...other].slice(0, DEEP_SCAN_MAX)
+  return assets
+    .filter((a) => a.toolType === 'DB' || a.toolType === 'ETL')
+    .slice(0, DEEP_SCAN_MAX)
 }
 
 export function estimateScanSeconds(assets: AssetItem[]): number {

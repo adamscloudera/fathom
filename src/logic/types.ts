@@ -47,9 +47,26 @@ export type DegreeEntry = {
   databaseName: string
   schemaName: string
   objectType: string
+  toolName?: string
+  toolType?: string
   degree: number
   ins: number
   outs: number
+}
+
+export type DuplicateFlowNode = {
+  key: string
+  objectName: string
+  connectionName: string
+  objectType: string
+  toolName: string
+  toolType: string
+}
+
+export type DuplicateFlowGroup = {
+  id: string
+  sources: DuplicateFlowNode[]
+  targets: DuplicateFlowNode[]
 }
 
 export type CrossToolFlow = {
@@ -102,7 +119,9 @@ export type FathomInsights = {
   confirmedOrphans: DegreeEntry[]
   topByDegree: DegreeEntry[]
   lowDegree: DegreeEntry[]
+  allConnectedDegrees: DegreeEntry[]
   crossToolFlows: CrossToolFlow[]
+  duplicateFlowGroups: DuplicateFlowGroup[]
   inferredInsights: string[]
   lineageDashboard: LineageDashboard | null
   columnDashboard: LineageDashboard | null

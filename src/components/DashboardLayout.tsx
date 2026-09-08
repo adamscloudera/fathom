@@ -8,12 +8,16 @@ import { TopObjectsCard } from './TopObjectsCard.tsx'
 import { InferredInsightsCard } from './InferredInsightsCard.tsx'
 import { LineageDashboardCard } from './LineageDashboardCard.tsx'
 import { OrphanedObjectsReport } from './OrphanedObjectsReport.tsx'
+import { HighImpactReport } from './HighImpactReport.tsx'
+import { DuplicateFlowsReport } from './DuplicateFlowsReport.tsx'
 
-type Report = 'overview' | 'orphans'
+type Report = 'overview' | 'orphans' | 'high-impact' | 'duplicates'
 
 const REPORTS: { id: Report; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'orphans', label: 'Orphaned Objects' },
+  { id: 'high-impact', label: 'High Impact' },
+  { id: 'duplicates', label: 'Duplicate Flows' },
 ]
 
 type Props = {
@@ -72,6 +76,14 @@ export function DashboardLayout({ insights, onReset }: Props) {
 
       {activeReport === 'orphans' && (
         <OrphanedObjectsReport insights={insights} />
+      )}
+
+      {activeReport === 'high-impact' && (
+        <HighImpactReport insights={insights} />
+      )}
+
+      {activeReport === 'duplicates' && (
+        <DuplicateFlowsReport insights={insights} />
       )}
     </div>
   )

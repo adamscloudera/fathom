@@ -2,6 +2,7 @@ import type { AssetItem } from '@adamscloudera/octopai-api'
 import type {
   LineageResult, LineageNodeRaw, ToolBreakdownEntry, ConnectionBreakdownEntry,
   DegreeEntry, CrossToolFlow, FathomInsights, LineageDashboard,
+  DuplicateFlowNode, DuplicateFlowGroup,
 } from './types.ts'
 
 const MAX_TOP = 10
@@ -37,7 +38,8 @@ function toDegreeEntry(node: LineageNodeRaw, fallbackAsset?: AssetItem, inFallba
   // Fall back to edge-sampled count for tenants that don't return ins/outs.
   const ins = node.ins ?? inFallback
   const outs = node.outs ?? outFallback
-  // Use || so empty strings fall through to the next candidate
+  const toolName = node.toolName || fallbackAsset?.toolName
+  const toolType = node.toolType || fallbackAsset?.toolType
   return {
     key: node._key,
     objectName: node.objectName || fallbackAsset?.objectName || '',
@@ -45,6 +47,8 @@ function toDegreeEntry(node: LineageNodeRaw, fallbackAsset?: AssetItem, inFallba
     databaseName: node.databaseName || fallbackAsset?.databaseName || '',
     schemaName: node.schemaName || fallbackAsset?.schemaName || '',
     objectType: node.objectType || fallbackAsset?.objectType || '',
+    ...(toolName ? { toolName } : {}),
+    ...(toolType ? { toolType } : {}),
     degree: ins + outs,
     ins,
     outs,
@@ -160,6 +164,51 @@ export function analyze(
   const withConnections = allDegrees.filter((e) => e.degree > 0)
   const topByDegree = [...withConnections].sort((a, b) => b.degree - a.degree).slice(0, MAX_TOP)
   const lowDegree = [...withConnections].sort((a, b) => a.degree - b.degree).slice(0, MAX_TOP)
+  const allConnectedDegrees = [...withConnections].sort((a, b) => b.degree - a.degree)
+
+  // Duplicate flow detection: find target objects sharing identical upstream source sets.
+  // Target→sources map keyed by bare node key.
+  const targetSourcesMap = new Map<string, Set<string>>()
+  for (const result of lineageResults) {
+    for (const edge of result.edges) {
+      const fromBk = bareKey(edge.from)
+      const toBk = bareKey(edge.to)
+      if (!fromBk || !toBk || fromBk === toBk) continue
+      if (!targetSourcesMap.has(toBk)) targetSourcesMap.set(toBk, new Set())
+      targetSourcesMap.get(toBk)!.add(fromBk)
+    }
+  }
+
+  const fpToTargets = new Map<string, string[]>()
+  for (const [targetBk, sourceSet] of targetSourcesMap.entries()) {
+    if (sourceSet.size < 2) continue  // require >= 2 shared sources to reduce ETL fan-out false positives
+    const fp = [...sourceSet].sort().join('§')
+    if (!fpToTargets.has(fp)) fpToTargets.set(fp, [])
+    fpToTargets.get(fp)!.push(targetBk)
+  }
+
+  function nodeInfo(bk: string): DuplicateFlowNode {
+    const node = nodeMap.get(bk)
+    const asset = lookupAsset(bk)
+    return {
+      key: bk,
+      objectName: node?.objectName ?? asset?.objectName ?? bk,
+      connectionName: node?.connectionName ?? asset?.connectionName ?? '',
+      objectType: node?.objectType ?? asset?.objectType ?? '',
+      toolName: node?.toolName ?? asset?.toolName ?? '',
+      toolType: node?.toolType ?? asset?.toolType ?? '',
+    }
+  }
+
+  const duplicateFlowGroups: DuplicateFlowGroup[] = [...fpToTargets.entries()]
+    .filter(([, targets]) => targets.length >= 2)
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, 20)
+    .map(([fp, targetBks], i) => ({
+      id: `dup-${i}`,
+      sources: fp.split('§').map(nodeInfo),
+      targets: targetBks.map(nodeInfo),
+    }))
 
   function lookupTool(key: string): string | undefined {
     const direct = toolByKey.get(key)
@@ -212,7 +261,9 @@ export function analyze(
     confirmedOrphans,
     topByDegree,
     lowDegree,
+    allConnectedDegrees,
     crossToolFlows,
+    duplicateFlowGroups,
     inferredInsights,
     lineageDashboard,
     columnDashboard,

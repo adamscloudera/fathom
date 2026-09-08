@@ -314,7 +314,9 @@ export function KeywordScanReport() {
 
           {inputValue.trim() && scanStatus !== 'scanning' && (
             <span className="text-xs text-muted shrink-0">
-              {previewCount} object{previewCount === 1 ? '' : 's'} match
+              {previewCount > 0
+                ? `${previewCount} table${previewCount === 1 ? '' : 's'} + columns`
+                : 'columns will be scanned'}
             </span>
           )}
 
@@ -372,9 +374,11 @@ export function KeywordScanReport() {
       {isDone && totalResults === 0 && (
         <div className="surface-card p-8 text-center">
           <p className="text-sm text-muted">
-            No objects or columns matched <span className="font-mono">{lastKeyword}</span>.
+            No tables or columns matched <span className="font-mono">{lastKeyword}</span>.
           </p>
-          <p className="text-xs text-muted mt-1">Try a shorter or different term.</p>
+          <p className="text-xs text-muted mt-1">
+            {scanError ? 'Column catalog could not be fetched — try a table name instead.' : 'Try a different or shorter term.'}
+          </p>
         </div>
       )}
 

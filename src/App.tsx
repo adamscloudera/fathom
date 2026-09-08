@@ -1,12 +1,13 @@
 import { PlatformChrome } from './components/PlatformChrome.tsx'
 import { LoginPanel } from './components/LoginPanel.tsx'
 import { DashboardLayout } from './components/DashboardLayout.tsx'
+import { KeywordScanReport } from './components/KeywordScanReport.tsx'
 import { useInsightsStore } from './stores/useInsightsStore.ts'
 import { useSessionStore } from './stores/useSessionStore.ts'
 
 export default function App() {
   const { insights, clearInsights } = useInsightsStore()
-  const { clearSession } = useSessionStore()
+  const { accessToken, clearSession } = useSessionStore()
 
   function handleReset() {
     clearInsights()
@@ -24,12 +25,19 @@ export default function App() {
       </header>
 
       <main className="px-6 pb-10">
-        {!insights ? (
+        {insights ? (
+          <DashboardLayout insights={insights} onReset={handleReset} />
+        ) : accessToken ? (
+          <div className="mt-8 space-y-8">
+            <div className="max-w-lg">
+              <LoginPanel />
+            </div>
+            <KeywordScanReport />
+          </div>
+        ) : (
           <div className="max-w-lg mt-8">
             <LoginPanel />
           </div>
-        ) : (
-          <DashboardLayout insights={insights} onReset={handleReset} />
         )}
       </main>
     </div>

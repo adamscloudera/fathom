@@ -70,6 +70,13 @@ export type OctopaiClient = {
     depth?: number,
     signal?: AbortSignal,
   ): Promise<LineageResponse>
+  // Server-side name-filtered asset search: POST /assets/query with AssetNames filter.
+  queryAssetsByName(
+    company: string,
+    token: string,
+    names: string[],
+    signal?: AbortSignal,
+  ): Promise<AssetItem[]>
 }
 
 const REQUEST_TIMEOUT_MS = 60_000
@@ -322,7 +329,7 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     const resp = await apiPost<LineageResponse>(
       company,
       '/api/v2.0/lineage',
-      { assetKey, depth, limit: 500, assetType: 2, direction: 2 },
+      { assetKey, depth, limit: 5000, assetType: 2, direction: 2 },
       token,
       signal,
     )
@@ -339,7 +346,7 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     const resp = await apiPost<LineageResponse>(
       company,
       '/api/v2.0/lineage',
-      { assetKey, depth, limit: 500, assetType: 1, direction: 2 },
+      { assetKey, depth, limit: 5000, assetType: 1, direction: 2 },
       token,
       signal,
     )
@@ -451,6 +458,37 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     return all
   }
 
+  async function queryAssetsByName(
+    company: string,
+    token: string,
+    names: string[],
+    signal?: AbortSignal,
+  ): Promise<AssetItem[]> {
+    const all: AssetItem[] = []
+    const first = await apiPost<AssetsQueryResponse>(
+      company,
+      '/api/v2.0/assets/query',
+      { AssetNames: names, assetType: 2, limit: DEFAULT_PAGE_SIZE },
+      token,
+      signal,
+    )
+    const firstPage = normalizeResponse(first)
+    all.push(...firstPage.items)
+
+    if (firstPage.hasMore && firstPage.cursorId) {
+      let cursor: string | undefined = firstPage.cursorId
+      while (cursor) {
+        if (signal?.aborted) throw new Error('Asset name search cancelled.')
+        const raw = await scrollFetch(company, token, cursor, signal)
+        const page = normalizeResponse(raw)
+        all.push(...page.items)
+        cursor = page.hasMore ? page.cursorId : undefined
+      }
+    }
+
+    return all
+  }
+
   return {
     login,
     queryAssets,
@@ -464,5 +502,6 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     queryColumnDashboard,
     queryObjectDetails,
     queryAllColumnAssets,
+    queryAssetsByName,
   }
 }

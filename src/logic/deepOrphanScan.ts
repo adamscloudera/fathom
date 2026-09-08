@@ -8,17 +8,22 @@ const CONCURRENCY = 10
 // At concurrency=10, ~1s/call: 2000 objects ≈ 3-4 minutes.
 export const DEEP_SCAN_MAX = 2000
 
-const bareKey = (k: string): string => {
-  const s = k.lastIndexOf('/')
-  return s >= 0 ? k.slice(s + 1) : k
-}
-
 // Only scan DB (tables/views) and ETL (pipeline jobs) — reports are terminal nodes
 // by definition and will never have downstream connections.
+// Deduplicate by objectName+connectionName: a column-level catalog has N rows per table;
+// querying all N would repeat the same lineage check N times for the same underlying object.
 export function selectDeepScanCandidates(assets: AssetItem[]): AssetItem[] {
-  return assets
-    .filter((a) => a.toolType === 'DB' || a.toolType === 'ETL')
-    .slice(0, DEEP_SCAN_MAX)
+  const seen = new Set<string>()
+  const candidates: AssetItem[] = []
+  for (const a of assets) {
+    if (a.toolType !== 'DB' && a.toolType !== 'ETL') continue
+    const tableKey = `${a.connectionName ?? ''}||${a.objectName ?? ''}`
+    if (seen.has(tableKey)) continue
+    seen.add(tableKey)
+    candidates.push(a)
+    if (candidates.length >= DEEP_SCAN_MAX) break
+  }
+  return candidates
 }
 
 export function estimateScanSeconds(assets: AssetItem[]): number {
@@ -42,18 +47,18 @@ export async function runDeepOrphanScan(
     const batch = candidates.slice(i, i + CONCURRENCY)
     const results = await Promise.allSettled(
       batch.map((asset) =>
-        octopai.queryLineage(company, accessToken, asset._key, 1, signal).then((r) => ({
+        // direction: 0 = bidirectional; depth: 1 = one hop is enough to confirm any connection.
+        // A true orphan has zero edges in either direction.
+        octopai.queryLineage(company, accessToken, asset._key, 1, signal, 0).then((r) => ({
           asset,
-          links: (r.links ?? []) as Array<{ from: unknown; to: unknown }>,
+          links: r.links ?? [],
         })),
       ),
     )
     for (const r of results) {
       if (r.status !== 'fulfilled') continue
       const { asset, links } = r.value
-      const bk = bareKey(asset._key)
-      const hasOutbound = links.some((e) => bareKey(String(e.from)) === bk)
-      if (!hasOutbound) {
+      if (links.length === 0) {
         orphans.push({
           key: asset._key,
           objectName: asset.objectName ?? '',

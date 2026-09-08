@@ -141,30 +141,6 @@ export type PipelineDepthStats = {
   longestChains: PipelineChain[]             // top 10 deepest
 }
 
-export type ScanNode = {
-  key: string
-  objectName: string
-  connectionName: string
-  databaseName: string
-  schemaName: string
-  toolName: string
-  toolType: string
-}
-
-export type KeywordMatchResult = {
-  key: string
-  objectName: string
-  connectionName: string
-  databaseName: string
-  schemaName: string
-  objectType: string
-  toolName: string
-  toolType: string
-  upstreamSources: ScanNode[]      // objects that FEED INTO this one (audit: provenance)
-  downstreamConsumers: ScanNode[]  // objects that READ FROM this one (compliance: exposure)
-  lineageFetched: boolean
-}
-
 export type ColumnScanNode = {
   key: string
   columnName: string    // assetName — the column identifier

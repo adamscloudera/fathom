@@ -63,14 +63,6 @@ export type OctopaiClient = {
     onProgress?: (fetched: number) => void,
     signal?: AbortSignal,
   ): Promise<AssetItem[]>
-  // Column-level lineage: same as queryLineage but with assetType: 1.
-  queryColumnLineage(
-    company: string,
-    token: string,
-    assetKey: string,
-    depth?: number,
-    signal?: AbortSignal,
-  ): Promise<LineageResponse>
   // Server-side name-filtered asset search: POST /assets/query with AssetNames filter.
   queryAssetsByName(
     company: string,
@@ -338,23 +330,6 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     return normalizeLineageResponse(resp)
   }
 
-  async function queryColumnLineage(
-    company: string,
-    token: string,
-    assetKey: string,
-    depth = 2,
-    signal?: AbortSignal,
-  ): Promise<LineageResponse> {
-    const resp = await apiPost<LineageResponse>(
-      company,
-      '/api/v2.0/lineage',
-      { assetKey, depth, limit: 5000, assetType: 1, direction: 2 },
-      token,
-      signal,
-    )
-    return normalizeLineageResponse(resp)
-  }
-
   async function queryLineageDashboard(
     company: string,
     token: string,
@@ -499,7 +474,6 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     queryAssetsForConnection,
     queryAllAssetsForConnection,
     queryLineage,
-    queryColumnLineage,
     queryLineageDashboard,
     queryColumnDashboard,
     queryObjectDetails,

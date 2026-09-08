@@ -1,22 +1,11 @@
 import { useState, useMemo } from 'react'
 import { Download } from 'lucide-react'
 import { clsx } from 'clsx'
+import { downloadCsv, FilterTabs, TYPE_BADGE } from '../lib/reportUtils.tsx'
 import type { FathomInsights, DegreeEntry } from '../logic/types.ts'
 
 type TypeFilter = 'all' | 'DB' | 'ETL' | 'REPORT'
 
-const FILTER_LABELS: Record<TypeFilter, string> = {
-  all: 'All',
-  DB: 'Database',
-  ETL: 'ETL',
-  REPORT: 'Reports',
-}
-
-const TYPE_BADGE: Record<string, string> = {
-  DB: 'badge-blue',
-  ETL: 'bg-purple-100 text-purple-800 border-purple-200',
-  REPORT: 'bg-orange-100 text-orange-800 border-orange-200',
-}
 
 type Props = { insights: FathomInsights }
 
@@ -43,23 +32,15 @@ export function HighImpactReport({ insights }: Props) {
   const maxDegree = filtered.length > 0 ? filtered[0].degree : 1
 
   function exportCsv() {
-    const headers = ['Object', 'Object Type', 'Tool', 'Tool Type', 'Connection', 'Database', 'Schema', 'In', 'Out', 'Degree']
-    const escape = (v: string | number) => typeof v === 'number' ? String(v) : `"${String(v).replace(/"/g, '""')}"`
-    const rows = filtered.map((e) =>
-      [
+    downloadCsv(
+      `${insights.tenantName}-high-impact-objects.csv`,
+      ['Object', 'Object Type', 'Tool', 'Tool Type', 'Connection', 'Database', 'Schema', 'In', 'Out', 'Degree'],
+      filtered.map((e) => [
         e.objectName, e.objectType, e.toolName ?? '', e.toolType ?? '',
         e.connectionName, e.databaseName, e.schemaName,
         e.ins, e.outs, e.degree,
-      ].map(escape).join(','),
+      ]),
     )
-    const csv = [headers.join(','), ...rows].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${insights.tenantName}-high-impact-objects.csv`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   const top = insights.allConnectedDegrees[0]
@@ -96,27 +77,17 @@ export function HighImpactReport({ insights }: Props) {
       {filtered.length > 0 && (
         <div className="surface-card p-5 space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-1 flex-wrap">
-              {(['all', 'DB', 'ETL', 'REPORT'] as TypeFilter[])
+            <FilterTabs
+              tabs={(['all', 'DB', 'ETL', 'REPORT'] as TypeFilter[])
                 .filter((t) => t === 'all' || (countsByType[t] ?? 0) > 0)
-                .map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setFilter(t)}
-                    className={clsx(
-                      'px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                      filter === t
-                        ? 'bg-primary text-white'
-                        : 'bg-muted/15 text-muted hover:text-foreground hover:bg-muted/30',
-                    )}
-                  >
-                    {FILTER_LABELS[t]}
-                    <span className={clsx('ml-1.5 tabular-nums', filter === t ? 'opacity-80' : '')}>
-                      {t === 'all' ? insights.allConnectedDegrees.length : (countsByType[t] ?? 0)}
-                    </span>
-                  </button>
-                ))}
-            </div>
+                .map((t) => ({
+                  id: t,
+                  label: t === 'all' ? 'All' : t === 'DB' ? 'Database' : t === 'ETL' ? 'ETL' : 'Reports',
+                  count: t === 'all' ? insights.allConnectedDegrees.length : (countsByType[t] ?? 0),
+                }))}
+              active={filter}
+              onChange={setFilter}
+            />
             <button onClick={exportCsv} className="btn-ghost text-xs shrink-0">
               <Download className="w-3.5 h-3.5" />
               Export CSV

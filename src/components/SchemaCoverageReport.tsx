@@ -2,38 +2,11 @@ import { useState, useMemo } from 'react'
 import { Download } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { FathomInsights, SchemaCoverageEntry } from '../logic/types.ts'
+import { downloadCsv, CoverageBar, FilterTabs } from '../lib/reportUtils.tsx'
 
 type CoverageFilter = 'all' | 'dark'
 
 type Props = { insights: FathomInsights }
-
-function CoverageBar({ rate }: { rate: number }) {
-  const pct = Math.round(rate * 100)
-  const colorClass =
-    pct < 30 ? 'bg-red-500' : pct < 70 ? 'bg-amber-400' : 'bg-green-500'
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 rounded-full bg-border overflow-hidden">
-        <div
-          className={clsx('h-full rounded-full', colorClass)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span
-        className={clsx(
-          'tabular-nums font-medium w-10 text-right text-xs',
-          pct < 30
-            ? 'text-red-500'
-            : pct < 70
-            ? 'text-amber-500'
-            : 'text-green-600',
-        )}
-      >
-        {pct}%
-      </span>
-    </div>
-  )
-}
 
 export function SchemaCoverageReport({ insights }: Props) {
   const [filter, setFilter] = useState<CoverageFilter>('all')
@@ -53,28 +26,14 @@ export function SchemaCoverageReport({ insights }: Props) {
   )
 
   function exportCsv() {
-    const headers = [
-      'Connection', 'Database', 'Schema', 'Tool',
-      'Objects Seen', 'With Lineage', 'Coverage %',
-    ]
-    const escape = (v: string | number) =>
-      typeof v === 'number' ? String(v) : `"${String(v).replace(/"/g, '""')}"`
-    const rows = filtered.map((e: SchemaCoverageEntry) =>
-      [
+    downloadCsv(
+      `${insights.tenantName}-schema-coverage.csv`,
+      ['Connection', 'Database', 'Schema', 'Tool', 'Objects Seen', 'With Lineage', 'Coverage %'],
+      filtered.map((e: SchemaCoverageEntry) => [
         e.connectionName, e.databaseName, e.schemaName, e.toolName,
         e.totalSeen, e.withLineage, Math.round(e.coverageRate * 100),
-      ]
-        .map(escape)
-        .join(','),
+      ]),
     )
-    const csv = [headers.join(','), ...rows].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${insights.tenantName}-schema-coverage.csv`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   if (schemaCoverage.length === 0) {
@@ -120,25 +79,15 @@ export function SchemaCoverageReport({ insights }: Props) {
 
       <div className="surface-card p-5 space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1">
-            {(['all', 'dark'] as CoverageFilter[]).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={clsx(
-                  'px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                  filter === f
-                    ? 'bg-primary text-white'
-                    : 'bg-muted/15 text-muted hover:text-foreground hover:bg-muted/30',
-                )}
-              >
-                {f === 'all' ? 'All' : 'Dark (<30%)'}
-                <span className={clsx('ml-1.5 tabular-nums', filter === f ? 'opacity-80' : '')}>
-                  {f === 'all' ? schemaCoverage.length : darkCount}
-                </span>
-              </button>
-            ))}
-          </div>
+          <FilterTabs
+            tabs={(['all', 'dark'] as CoverageFilter[]).map((f) => ({
+              id: f,
+              label: f === 'all' ? 'All' : 'Dark (<30%)',
+              count: f === 'all' ? schemaCoverage.length : darkCount,
+            }))}
+            active={filter}
+            onChange={setFilter}
+          />
           <button onClick={exportCsv} className="btn-ghost text-xs shrink-0">
             <Download className="w-3.5 h-3.5" />
             Export CSV

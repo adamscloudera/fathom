@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from 'react'
 import { ScanSearch, X, AlertCircle, CheckCircle2, Download } from 'lucide-react'
 import { clsx } from 'clsx'
+import { downloadCsv, FilterTabs } from '../lib/reportUtils.tsx'
 import type { FathomInsights, DeepOrphanEntry } from '../logic/types.ts'
 import { useInsightsStore } from '../stores/useInsightsStore.ts'
 import { useSessionStore } from '../stores/useSessionStore.ts'
@@ -13,11 +14,6 @@ import type { AssetItem } from '@adamscloudera/octopai-api'
 
 type ToolFilter = 'all' | 'DB' | 'ETL'
 
-const FILTER_LABELS: Record<ToolFilter, string> = {
-  all: 'All',
-  DB: 'Database',
-  ETL: 'ETL',
-}
 
 function buildAssetMap(assets: AssetItem[]): Map<string, AssetItem> {
   const m = new Map<string, AssetItem>()
@@ -170,20 +166,14 @@ export function OrphanedObjectsReport({ insights }: Props) {
   }
 
   function exportCsv() {
-    const headers = ['Object', 'Object Type', 'Tool', 'Tool Type', 'Connection', 'Database', 'Schema', 'Source']
-    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`
-    const rows = allOrphans.map((o) => [
-      o.objectName, o.objectType, o.toolName, o.toolType,
-      o.connectionName, o.databaseName, o.schemaName, o.source,
-    ].map(escape).join(','))
-    const csv = [headers.join(','), ...rows].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${insights.tenantName}-orphaned-objects.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadCsv(
+      `${insights.tenantName}-orphaned-objects.csv`,
+      ['Object', 'Object Type', 'Tool', 'Tool Type', 'Connection', 'Database', 'Schema', 'Source'],
+      allOrphans.map((o) => [
+        o.objectName, o.objectType, o.toolName, o.toolType,
+        o.connectionName, o.databaseName, o.schemaName, o.source,
+      ]),
+    )
   }
 
   function handleCancelScan() {
@@ -285,27 +275,17 @@ export function OrphanedObjectsReport({ insights }: Props) {
         <div className="surface-card p-5 space-y-3">
           {/* Filter tabs + export */}
           <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1 flex-wrap">
-            {(['all', 'DB', 'ETL'] as ToolFilter[])
+          <FilterTabs
+            tabs={(['all', 'DB', 'ETL'] as ToolFilter[])
               .filter((t) => t === 'all' || (countsByType[t] ?? 0) > 0)
-              .map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setFilter(t)}
-                  className={clsx(
-                    'px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                    filter === t
-                      ? 'bg-primary text-white'
-                      : 'bg-muted/15 text-muted hover:text-foreground hover:bg-muted/30',
-                  )}
-                >
-                  {FILTER_LABELS[t]}
-                  <span className={clsx('ml-1.5 tabular-nums', filter === t ? 'opacity-80' : '')}>
-                    {t === 'all' ? allOrphans.length : (countsByType[t] ?? 0)}
-                  </span>
-                </button>
-              ))}
-          </div>
+              .map((t) => ({
+                id: t,
+                label: t === 'all' ? 'All' : t === 'DB' ? 'Database' : 'ETL',
+                count: t === 'all' ? allOrphans.length : (countsByType[t] ?? 0),
+              }))}
+            active={filter}
+            onChange={setFilter}
+          />
           <button onClick={exportCsv} className="btn-ghost text-xs shrink-0">
             <Download className="w-3.5 h-3.5" />
             Export CSV

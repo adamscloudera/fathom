@@ -1,64 +1,23 @@
 import { Download } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { FathomInsights, ConnectionHealthEntry } from '../logic/types.ts'
+import { downloadCsv, CoverageBar } from '../lib/reportUtils.tsx'
 
 type Props = { insights: FathomInsights }
-
-function CoverageBar({ rate }: { rate: number }) {
-  const pct = Math.round(rate * 100)
-  const colorClass =
-    pct < 30 ? 'bg-red-500' : pct < 70 ? 'bg-amber-400' : 'bg-green-500'
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 rounded-full bg-border overflow-hidden">
-        <div
-          className={clsx('h-full rounded-full', colorClass)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span
-        className={clsx(
-          'tabular-nums font-medium w-10 text-right text-xs',
-          pct < 30
-            ? 'text-red-500'
-            : pct < 70
-            ? 'text-amber-500'
-            : 'text-green-600',
-        )}
-      >
-        {pct}%
-      </span>
-    </div>
-  )
-}
 
 export function ConnectionHealthReport({ insights }: Props) {
   const { connectionHealth } = insights
 
   function exportCsv() {
-    const headers = [
-      'Connection', 'Tool', 'Type', 'Objects Seen',
-      'With Lineage', 'Orphans', 'Avg Degree', 'Max Degree', 'Coverage %',
-    ]
-    const escape = (v: string | number) =>
-      typeof v === 'number' ? String(v) : `"${String(v).replace(/"/g, '""')}"`
-    const rows = connectionHealth.map((e: ConnectionHealthEntry) =>
-      [
+    downloadCsv(
+      `${insights.tenantName}-connection-health.csv`,
+      ['Connection', 'Tool', 'Type', 'Objects Seen', 'With Lineage', 'Orphans', 'Avg Degree', 'Max Degree', 'Coverage %'],
+      connectionHealth.map((e: ConnectionHealthEntry) => [
         e.connectionName, e.toolName, e.toolType, e.totalSeen,
         e.withLineage, e.orphanCount, e.avgDegree, e.maxDegree,
         Math.round(e.coverageRate * 100),
-      ]
-        .map(escape)
-        .join(','),
+      ]),
     )
-    const csv = [headers.join(','), ...rows].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${insights.tenantName}-connection-health.csv`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   if (connectionHealth.length === 0) {

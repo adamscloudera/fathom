@@ -1,6 +1,7 @@
 import { Download } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { FathomInsights } from '../logic/types.ts'
+import { downloadCsv } from '../lib/reportUtils.tsx'
 
 type Props = { insights: FathomInsights }
 
@@ -26,28 +27,17 @@ export function PipelineDepthReport({ insights }: Props) {
   const maxCount = Math.max(...distRows.map((r) => r.count), 1)
 
   function exportCsv() {
-    const headers = ['Rank', 'Depth', 'Source', 'Target', 'Full Path']
-    const escape = (v: string | number) =>
-      typeof v === 'number' ? String(v) : `"${String(v).replace(/"/g, '""')}"`
-    const rows = longestChains.map((chain, i) =>
-      [
+    downloadCsv(
+      `${insights.tenantName}-pipeline-depth.csv`,
+      ['Rank', 'Depth', 'Source', 'Target', 'Full Path'],
+      longestChains.map((chain, i) => [
         i + 1,
         chain.depth,
         chain.sourceLabel,
         chain.targetLabel,
         chain.pathLabels.join(' -> '),
-      ]
-        .map(escape)
-        .join(','),
+      ]),
     )
-    const csv = [headers.join(','), ...rows].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${insights.tenantName}-pipeline-depth.csv`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   return (

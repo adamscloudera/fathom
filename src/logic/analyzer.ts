@@ -11,62 +11,31 @@ const MAX_ORPHANS = 20
 
 const MIN_SAMPLES_PER_TOOL = 10
 
-export function selectSampleKeys(assets: AssetItem[], maxKeys = 200): string[] {
-  // Group by toolName so every tool is represented, then fill proportionally.
-  // This avoids under-sampling small tools (e.g. 238-object ETL tool in 10k catalog)
-  // that would otherwise get 2-3 samples and produce false "isolated tool" positives.
-  const byTool = new Map<string, string[]>()
-  for (const a of assets) {
-    const tool = a.toolName ?? '__unknown__'
-    if (!byTool.has(tool)) byTool.set(tool, [])
-    byTool.get(tool)!.push(a._key)
-  }
-  const toolCount = byTool.size || 1
-  const perTool = Math.max(MIN_SAMPLES_PER_TOOL, Math.ceil(maxKeys / toolCount))
-  const selected: string[] = []
-  for (const keys of byTool.values()) {
-    const quota = Math.min(perTool, keys.length)
-    const step = Math.max(1, Math.floor(keys.length / quota))
-    for (let i = 0; i < keys.length && selected.length < maxKeys; i += step) {
-      selected.push(keys[i])
-    }
-  }
-  return selected.slice(0, maxKeys)
+// ---------------------------------------------------------------------------
+// Internal types
+// ---------------------------------------------------------------------------
+
+type LineageIndex = {
+  nodeMap: Map<string, LineageNodeRaw>
+  edgeIn: Map<string, number>
+  edgeOut: Map<string, number>
+  assetByKey: Map<string, AssetItem>
+  toolByKey: Map<string, string>
+  bareKey: (k: string) => string
+  lookupAsset: (k: string) => AssetItem | undefined
+  lookupTool: (k: string) => string | undefined
 }
 
-function toDegreeEntry(node: LineageNodeRaw, fallbackAsset?: AssetItem, inFallback = 0, outFallback = 0): DegreeEntry {
-  // Prefer API-reported values (global count across all lineage).
-  // Fall back to edge-sampled count for tenants that don't return ins/outs.
-  const ins = node.ins ?? inFallback
-  const outs = node.outs ?? outFallback
-  const toolName = node.toolName || fallbackAsset?.toolName
-  const toolType = node.toolType || fallbackAsset?.toolType
-  return {
-    key: node._key,
-    objectName: node.objectName || fallbackAsset?.objectName || '',
-    connectionName: node.connectionName || fallbackAsset?.connectionName || '',
-    databaseName: node.databaseName || fallbackAsset?.databaseName || '',
-    schemaName: node.schemaName || fallbackAsset?.schemaName || '',
-    objectType: node.objectType || fallbackAsset?.objectType || '',
-    ...(toolName ? { toolName } : {}),
-    ...(toolType ? { toolType } : {}),
-    degree: ins + outs,
-    ins,
-    outs,
-  }
-}
+// ---------------------------------------------------------------------------
+// Sub-functions
+// ---------------------------------------------------------------------------
 
-export function analyze(
-  tenantName: string,
-  assets: AssetItem[],
-  lineageResults: LineageResult[],
-  catalogPhaseDurationMs: number,
-  lineagePhaseDurationMs: number,
-  fetchedAt: string,
-  lineageDashboard: LineageDashboard | null = null,
-  columnDashboard: LineageDashboard | null = null,
-): FathomInsights {
-  // Catalog-level analytics
+function buildCatalogStats(assets: AssetItem[]): {
+  toolBreakdown: ToolBreakdownEntry[]
+  connectionBreakdown: ConnectionBreakdownEntry[]
+  distinctDatabases: number
+  distinctSchemas: number
+} {
   const toolCounts = new Map<string, { toolType: string; count: number }>()
   const connCounts = new Map<string, { toolName: string; count: number }>()
   const dbs = new Set<string>()
@@ -95,7 +64,10 @@ export function analyze(
     .map(([connectionName, { toolName, count }]) => ({ connectionName, toolName, count }))
     .sort((a, b) => b.count - a.count)
 
-  // Lineage analytics
+  return { toolBreakdown, connectionBreakdown, distinctDatabases: dbs.size, distinctSchemas: schemas.size }
+}
+
+function buildLineageIndex(assets: AssetItem[], lineageResults: LineageResult[]): LineageIndex {
   // Index assets by both their full _key and the bare id after the last '/'
   // because the lineage API returns nodes with ArangoDB collection/id keys
   // (e.g. "objects/abc123") while the catalog uses the bare id ("abc123").
@@ -141,31 +113,25 @@ export function analyze(
     }
   }
 
-  function lookupAsset(key: string): AssetItem | undefined {
+  const lookupAsset = (key: string): AssetItem | undefined => {
     const direct = assetByKey.get(key)
     if (direct) return direct
     const slash = key.lastIndexOf('/')
     return slash >= 0 ? assetByKey.get(key.slice(slash + 1)) : undefined
   }
 
-  const allDegrees: DegreeEntry[] = [...nodeMap.values()].map((n) => {
-    const bk = bareKey(n._key)
-    return toDegreeEntry(
-      n,
-      lookupAsset(n._key),
-      edgeIn.get(bk) ?? edgeIn.get(n._key) ?? 0,
-      edgeOut.get(bk) ?? edgeOut.get(n._key) ?? 0,
-    )
-  })
+  const lookupTool = (key: string): string | undefined => {
+    const direct = toolByKey.get(key)
+    if (direct) return direct
+    const slash = key.lastIndexOf('/')
+    return slash >= 0 ? toolByKey.get(key.slice(slash + 1)) : undefined
+  }
 
-  const confirmedOrphans = allDegrees
-    .filter((e) => e.ins === 0 && e.outs === 0)
-    .slice(0, MAX_ORPHANS)
+  return { nodeMap, edgeIn, edgeOut, assetByKey, toolByKey, bareKey, lookupAsset, lookupTool }
+}
 
-  const withConnections = allDegrees.filter((e) => e.degree > 0)
-  const topByDegree = [...withConnections].sort((a, b) => b.degree - a.degree).slice(0, MAX_TOP)
-  const lowDegree = [...withConnections].sort((a, b) => a.degree - b.degree).slice(0, MAX_TOP)
-  const allConnectedDegrees = [...withConnections].sort((a, b) => b.degree - a.degree)
+function computeDuplicateFlows(lineageResults: LineageResult[], index: LineageIndex): DuplicateFlowGroup[] {
+  const { bareKey, nodeMap, lookupAsset } = index
 
   // Duplicate flow detection: find target objects sharing identical upstream source sets.
   // Target→sources map keyed by bare node key.
@@ -201,7 +167,7 @@ export function analyze(
     }
   }
 
-  const duplicateFlowGroups: DuplicateFlowGroup[] = [...fpToTargets.entries()]
+  return [...fpToTargets.entries()]
     .filter(([, targets]) => targets.length >= 2)
     .sort((a, b) => b[1].length - a[1].length)
     .slice(0, 20)
@@ -210,8 +176,10 @@ export function analyze(
       sources: fp.split('§').map(nodeInfo),
       targets: targetBks.map(nodeInfo),
     }))
+}
 
-  // Connection health: per-connection lineage coverage from lineage sample
+function computeConnectionHealth(allDegrees: DegreeEntry[]): ConnectionHealthEntry[] {
+  // Per-connection lineage coverage from lineage sample
   const connHealthMap = new Map<string, { toolName: string; toolType: string; degrees: number[] }>()
   for (const e of allDegrees) {
     const conn = e.connectionName || 'Unknown'
@@ -225,7 +193,7 @@ export function analyze(
     connHealthMap.get(conn)!.degrees.push(e.degree)
   }
 
-  const connectionHealth: ConnectionHealthEntry[] = [...connHealthMap.entries()]
+  return [...connHealthMap.entries()]
     .map(([connectionName, { toolName, toolType, degrees }]) => {
       const totalSeen = degrees.length
       const withLineage = degrees.filter((d) => d > 0).length
@@ -237,8 +205,10 @@ export function analyze(
       return { connectionName, toolName, toolType, totalSeen, withLineage, orphanCount, avgDegree, maxDegree, coverageRate }
     })
     .sort((a, b) => a.coverageRate - b.coverageRate)
+}
 
-  // Schema coverage: group allDegrees by (connection, database, schema) and compute lineage rate
+function computeSchemaCoverage(allDegrees: DegreeEntry[]): SchemaCoverageEntry[] {
+  // Group allDegrees by (connection, database, schema) and compute lineage rate
   const schemaCoverageMap = new Map<string, { connectionName: string; databaseName: string; schemaName: string; toolName: string; totalSeen: number; withLineage: number }>()
   for (const e of allDegrees) {
     const conn = e.connectionName || 'Unknown'
@@ -261,7 +231,7 @@ export function analyze(
     }
   }
 
-  const schemaCoverage: SchemaCoverageEntry[] = [...schemaCoverageMap.entries()]
+  return [...schemaCoverageMap.entries()]
     .map(([key, { connectionName, databaseName, schemaName, toolName, totalSeen, withLineage }]) => ({
       key,
       connectionName,
@@ -274,8 +244,12 @@ export function analyze(
     }))
     .sort((a, b) => a.coverageRate - b.coverageRate)
     .slice(0, 200)
+}
 
-  // Pipeline depth: build DAG from sampled edges, then DP longest path (Kahn's)
+function computePipelineDepth(lineageResults: LineageResult[], index: LineageIndex): PipelineDepthStats | null {
+  const { bareKey, nodeMap, lookupAsset } = index
+
+  // Build DAG from sampled edges, then DP longest path (Kahn's)
   const adj = new Map<string, string[]>()
   const inDeg = new Map<string, number>()
   const dagNodes = new Set<string>()
@@ -332,19 +306,100 @@ export function analyze(
   const depthDistribution: Record<number, number> = {}
   for (const d of allDistValues) depthDistribution[d] = (depthDistribution[d] ?? 0) + 1
 
-  const pipelineDepth: PipelineDepthStats | null = allDistValues.length === 0 ? null : {
+  return allDistValues.length === 0 ? null : {
     maxDepth: Math.max(...allDistValues),
     avgDepth: Math.round((allDistValues.reduce((a, b) => a + b, 0) / allDistValues.length) * 10) / 10,
     depthDistribution,
     longestChains,
   }
+}
 
-  function lookupTool(key: string): string | undefined {
-    const direct = toolByKey.get(key)
-    if (direct) return direct
-    const slash = key.lastIndexOf('/')
-    return slash >= 0 ? toolByKey.get(key.slice(slash + 1)) : undefined
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export function selectSampleKeys(assets: AssetItem[], maxKeys = 200): string[] {
+  // Group by toolName so every tool is represented, then fill proportionally.
+  // This avoids under-sampling small tools (e.g. 238-object ETL tool in 10k catalog)
+  // that would otherwise get 2-3 samples and produce false "isolated tool" positives.
+  const byTool = new Map<string, string[]>()
+  for (const a of assets) {
+    const tool = a.toolName ?? '__unknown__'
+    if (!byTool.has(tool)) byTool.set(tool, [])
+    byTool.get(tool)!.push(a._key)
   }
+  const toolCount = byTool.size || 1
+  const perTool = Math.max(MIN_SAMPLES_PER_TOOL, Math.ceil(maxKeys / toolCount))
+  const selected: string[] = []
+  for (const keys of byTool.values()) {
+    const quota = Math.min(perTool, keys.length)
+    const step = Math.max(1, Math.floor(keys.length / quota))
+    for (let i = 0; i < keys.length && selected.length < maxKeys; i += step) {
+      selected.push(keys[i])
+    }
+  }
+  return selected.slice(0, maxKeys)
+}
+
+function toDegreeEntry(node: LineageNodeRaw, fallbackAsset?: AssetItem, inFallback = 0, outFallback = 0): DegreeEntry {
+  // Prefer API-reported values (global count across all lineage).
+  // Fall back to edge-sampled count for tenants that don't return ins/outs.
+  const ins = node.ins ?? inFallback
+  const outs = node.outs ?? outFallback
+  const toolName = node.toolName || fallbackAsset?.toolName
+  const toolType = node.toolType || fallbackAsset?.toolType
+  return {
+    key: node._key,
+    objectName: node.objectName || fallbackAsset?.objectName || '',
+    connectionName: node.connectionName || fallbackAsset?.connectionName || '',
+    databaseName: node.databaseName || fallbackAsset?.databaseName || '',
+    schemaName: node.schemaName || fallbackAsset?.schemaName || '',
+    objectType: node.objectType || fallbackAsset?.objectType || '',
+    ...(toolName ? { toolName } : {}),
+    ...(toolType ? { toolType } : {}),
+    degree: ins + outs,
+    ins,
+    outs,
+  }
+}
+
+export function analyze(
+  tenantName: string,
+  assets: AssetItem[],
+  lineageResults: LineageResult[],
+  catalogPhaseDurationMs: number,
+  lineagePhaseDurationMs: number,
+  fetchedAt: string,
+  lineageDashboard: LineageDashboard | null = null,
+  columnDashboard: LineageDashboard | null = null,
+): FathomInsights {
+  const { toolBreakdown, connectionBreakdown, distinctDatabases, distinctSchemas } = buildCatalogStats(assets)
+  const index = buildLineageIndex(assets, lineageResults)
+  const { nodeMap, edgeIn, edgeOut, bareKey, lookupAsset, lookupTool } = index
+
+  const allDegrees: DegreeEntry[] = [...nodeMap.values()].map((n) => {
+    const bk = bareKey(n._key)
+    return toDegreeEntry(
+      n,
+      lookupAsset(n._key),
+      edgeIn.get(bk) ?? edgeIn.get(n._key) ?? 0,
+      edgeOut.get(bk) ?? edgeOut.get(n._key) ?? 0,
+    )
+  })
+
+  const confirmedOrphans = allDegrees
+    .filter((e) => e.ins === 0 && e.outs === 0)
+    .slice(0, MAX_ORPHANS)
+
+  const withConnections = allDegrees.filter((e) => e.degree > 0)
+  const topByDegree = [...withConnections].sort((a, b) => b.degree - a.degree).slice(0, MAX_TOP)
+  const lowDegree = [...withConnections].sort((a, b) => a.degree - b.degree).slice(0, MAX_TOP)
+  const allConnectedDegrees = [...withConnections].sort((a, b) => b.degree - a.degree)
+
+  const duplicateFlowGroups = computeDuplicateFlows(lineageResults, index)
+  const connectionHealth = computeConnectionHealth(allDegrees)
+  const schemaCoverage = computeSchemaCoverage(allDegrees)
+  const pipelineDepth = computePipelineDepth(lineageResults, index)
 
   // Cross-tool flows via edges
   const crossToolMap = new Map<string, number>()
@@ -370,7 +425,7 @@ export function analyze(
   const lineageCoverageRate = lineageResults.length > 0 ? coveredCount / lineageResults.length : 0
 
   const inferredInsights = buildInferredInsights({
-    toolBreakdown, distinctDatabases: dbs.size, distinctSchemas: schemas.size,
+    toolBreakdown, distinctDatabases, distinctSchemas,
     lineageCoverageRate, lineageSampledCount: lineageResults.length,
     confirmedOrphans, topByDegree, crossToolFlows, lineageDashboard,
   })
@@ -382,8 +437,8 @@ export function analyze(
     lineagePhaseDurationMs,
     totalAssets: assets.length,
     toolBreakdown,
-    distinctDatabases: dbs.size,
-    distinctSchemas: schemas.size,
+    distinctDatabases,
+    distinctSchemas,
     connectionBreakdown,
     lineageSampledCount: lineageResults.length,
     lineageCoverageRate,

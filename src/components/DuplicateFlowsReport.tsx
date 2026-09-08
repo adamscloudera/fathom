@@ -1,12 +1,7 @@
 import { Download, GitFork } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { FathomInsights, DuplicateFlowNode } from '../logic/types.ts'
-
-const TYPE_BADGE: Record<string, string> = {
-  DB: 'badge-blue',
-  ETL: 'bg-purple-100 text-purple-800 border-purple-200',
-  REPORT: 'bg-orange-100 text-orange-800 border-orange-200',
-}
+import { downloadCsv, TYPE_BADGE } from '../lib/reportUtils.tsx'
 
 function NodePill({ node }: { node: DuplicateFlowNode }) {
   return (
@@ -34,26 +29,20 @@ export function DuplicateFlowsReport({ insights }: Props) {
   const groups = insights.duplicateFlowGroups
 
   function exportCsv() {
-    const headers = ['Group', 'Role', 'Object', 'Object Type', 'Tool', 'Tool Type', 'Connection']
-    const escape = (v: string | number) =>
-      typeof v === 'number' ? String(v) : `"${String(v).replace(/"/g, '""')}"`
-    const rows: string[] = []
+    const rows: Array<Array<string | number>> = []
     for (const g of groups) {
       for (const s of g.sources) {
-        rows.push([g.id, 'source', s.objectName, s.objectType, s.toolName, s.toolType, s.connectionName].map(escape).join(','))
+        rows.push([g.id, 'source', s.objectName, s.objectType, s.toolName, s.toolType, s.connectionName])
       }
       for (const t of g.targets) {
-        rows.push([g.id, 'target', t.objectName, t.objectType, t.toolName, t.toolType, t.connectionName].map(escape).join(','))
+        rows.push([g.id, 'target', t.objectName, t.objectType, t.toolName, t.toolType, t.connectionName])
       }
     }
-    const csv = [headers.join(','), ...rows].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${insights.tenantName}-duplicate-flows.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadCsv(
+      `${insights.tenantName}-duplicate-flows.csv`,
+      ['Group', 'Role', 'Object', 'Object Type', 'Tool', 'Tool Type', 'Connection'],
+      rows,
+    )
   }
 
   return (

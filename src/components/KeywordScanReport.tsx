@@ -10,11 +10,11 @@ function ColumnPill({ node }: { node: ColumnScanNode }) {
   const label = node.columnName || node.key
   return (
     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-border bg-card text-xs">
-      <span className="font-mono text-foreground truncate max-w-[140px]" title={label}>
+      <span className="font-mono text-foreground">
         {label}
       </span>
       {node.tableName && (
-        <span className="text-muted truncate max-w-[80px]" title={node.tableName}>
+        <span className="text-muted">
           {node.tableName}
         </span>
       )}

@@ -23,7 +23,7 @@ export function LoginPanel() {
     company, accessToken, accessExpiry, displayName, status, error,
     scanProgress, setConfig, setTokens, setStatus, setScanProgress, clearSession,
   } = useSessionStore()
-  const { setInsights, clearInsights } = useInsightsStore()
+  const { setInsights, setRawAssets, clearInsights } = useInsightsStore()
 
   const [companyInput, setCompanyInput] = useState(company)
   const [email, setEmail] = useState('')
@@ -194,6 +194,7 @@ export function LoginPanel() {
       lineageDashboard,
       columnDashboard,
     )
+    setRawAssets(assets)
     setInsights(insights)
     setStatus('done', null)
   }

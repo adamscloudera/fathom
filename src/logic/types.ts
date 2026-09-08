@@ -69,6 +69,24 @@ export type LineageDashboard = {
   report: LineageDashboardBucket
 }
 
+export type DeepOrphanEntry = {
+  key: string
+  objectName: string
+  connectionName: string
+  databaseName: string
+  schemaName: string
+  objectType: string
+  toolName: string
+  toolType: string
+  source: 'sample' | 'deep'
+}
+
+export type DeepScanProgress = {
+  done: number
+  total: number
+  startedAt: number
+}
+
 export type FathomInsights = {
   tenantName: string
   fetchedAt: string

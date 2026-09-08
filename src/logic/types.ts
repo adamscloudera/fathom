@@ -165,6 +165,32 @@ export type KeywordMatchResult = {
   lineageFetched: boolean
 }
 
+export type ColumnScanNode = {
+  key: string
+  columnName: string    // assetName — the column identifier
+  tableName: string     // objectName after normalization — parent table
+  connectionName: string
+  databaseName: string
+  schemaName: string
+  toolName: string
+  toolType: string
+}
+
+export type ColumnMatchResult = {
+  key: string
+  columnName: string    // assetName — what matched the keyword
+  tableName: string     // objectName after normalization — parent table
+  dataType: string
+  connectionName: string
+  databaseName: string
+  schemaName: string
+  toolName: string
+  toolType: string
+  upstreamColumns: ColumnScanNode[]
+  downstreamColumns: ColumnScanNode[]
+  lineageFetched: boolean
+}
+
 export type FathomInsights = {
   tenantName: string
   fetchedAt: string

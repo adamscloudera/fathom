@@ -21,6 +21,7 @@ export type AssetItem = {
   toolName?: string       // Octopai tool identifier (e.g. 'SNOWFLAKE', 'ORACLE', 'UNK')
   toolType?: string       // asset category ('DB', 'ETL', 'REPORT')
   objectGUID?: string     // internal Octopai UUID — present on lineage nodes
+  dataType?: string       // column data type (assetType: 1 only)
 }
 
 export type AssetsQueryResponse = {

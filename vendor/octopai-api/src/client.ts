@@ -55,6 +55,21 @@ export type OctopaiClient = {
     connections: string[],
     signal?: AbortSignal,
   ): Promise<{ name: string; objectType: string } | null>
+  // Fetch all column-level assets (assetType: 1, IsMap: false) with scroll pagination.
+  queryAllColumnAssets(
+    company: string,
+    token: string,
+    onProgress?: (fetched: number) => void,
+    signal?: AbortSignal,
+  ): Promise<AssetItem[]>
+  // Column-level lineage: same as queryLineage but with assetType: 1.
+  queryColumnLineage(
+    company: string,
+    token: string,
+    assetKey: string,
+    depth?: number,
+    signal?: AbortSignal,
+  ): Promise<LineageResponse>
 }
 
 const REQUEST_TIMEOUT_MS = 60_000
@@ -260,22 +275,23 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     return normalizeResponse(resp).items
   }
 
-  async function queryLineage(
+  async function queryAllAssetsForConnection(
     company: string,
     token: string,
-    assetKey: string,
-    depth = 2,
+    connectionId: string,
     signal?: AbortSignal,
-  ): Promise<LineageResponse> {
-    const resp = await apiPost<LineageResponse>(
+  ): Promise<AssetItem[]> {
+    const resp = await apiPost<AssetsQueryResponse>(
       company,
-      '/api/v2.0/lineage',
-      { assetKey, depth, limit: 500, assetType: 2, direction: 2 },
+      '/api/v2.0/assets/query',
+      { limit: DEFAULT_PAGE_SIZE, assetType: 2, ConnectionIds: [connectionId] },
       token,
       signal,
     )
-    // API may return edges or links; each element uses _from/_to (ArangoDB convention).
-    // Normalize into links[] with from/to for consistent consumer contract.
+    return normalizeResponse(resp).items
+  }
+
+  function normalizeLineageResponse(resp: LineageResponse): LineageResponse {
     const rawEdges = (
       (resp as unknown as Record<string, unknown>).edges ??
       resp.links ??
@@ -290,6 +306,40 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
         type: l.type as string | undefined,
       })),
     }
+  }
+
+  async function queryLineage(
+    company: string,
+    token: string,
+    assetKey: string,
+    depth = 2,
+    signal?: AbortSignal,
+  ): Promise<LineageResponse> {
+    const resp = await apiPost<LineageResponse>(
+      company,
+      '/api/v2.0/lineage',
+      { assetKey, depth, limit: 500, assetType: 2, direction: 2 },
+      token,
+      signal,
+    )
+    return normalizeLineageResponse(resp)
+  }
+
+  async function queryColumnLineage(
+    company: string,
+    token: string,
+    assetKey: string,
+    depth = 2,
+    signal?: AbortSignal,
+  ): Promise<LineageResponse> {
+    const resp = await apiPost<LineageResponse>(
+      company,
+      '/api/v2.0/lineage',
+      { assetKey, depth, limit: 500, assetType: 1, direction: 2 },
+      token,
+      signal,
+    )
+    return normalizeLineageResponse(resp)
   }
 
   async function queryLineageDashboard(
@@ -364,21 +414,51 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     return name ? { name, objectType } : null
   }
 
-  async function queryAllAssetsForConnection(
+  async function queryAllColumnAssets(
     company: string,
     token: string,
-    connectionId: string,
+    onProgress?: (fetched: number) => void,
     signal?: AbortSignal,
   ): Promise<AssetItem[]> {
-    const resp = await apiPost<AssetsQueryResponse>(
+    const all: AssetItem[] = []
+    const first = await apiPost<AssetsQueryResponse>(
       company,
       '/api/v2.0/assets/query',
-      { limit: DEFAULT_PAGE_SIZE, assetType: 2, ConnectionIds: [connectionId] },
+      { limit: DEFAULT_PAGE_SIZE, assetType: 1, IsMap: false },
       token,
       signal,
     )
-    return normalizeResponse(resp).items
+    const firstPage = normalizeResponse(first)
+    all.push(...firstPage.items)
+    onProgress?.(all.length)
+
+    if (firstPage.hasMore && firstPage.cursorId) {
+      let cursor: string | undefined = firstPage.cursorId
+      while (cursor) {
+        if (signal?.aborted) throw new Error('Column asset fetch cancelled.')
+        const raw = await scrollFetch(company, token, cursor, signal)
+        const page = normalizeResponse(raw)
+        all.push(...page.items)
+        onProgress?.(all.length)
+        cursor = page.hasMore ? page.cursorId : undefined
+      }
+    }
+
+    return all
   }
 
-  return { login, queryAssets, queryAllAssets, queryAssetsForIndex, queryAssetsForConnection, queryAllAssetsForConnection, queryLineage, queryLineageDashboard, queryColumnDashboard, queryObjectDetails }
+  return {
+    login,
+    queryAssets,
+    queryAllAssets,
+    queryAssetsForIndex,
+    queryAssetsForConnection,
+    queryAllAssetsForConnection,
+    queryLineage,
+    queryColumnLineage,
+    queryLineageDashboard,
+    queryColumnDashboard,
+    queryObjectDetails,
+    queryAllColumnAssets,
+  }
 }

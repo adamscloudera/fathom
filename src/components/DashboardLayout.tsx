@@ -13,8 +13,9 @@ import { DuplicateFlowsReport } from './DuplicateFlowsReport.tsx'
 import { ConnectionHealthReport } from './ConnectionHealthReport.tsx'
 import { SchemaCoverageReport } from './SchemaCoverageReport.tsx'
 import { PipelineDepthReport } from './PipelineDepthReport.tsx'
+import { KeywordScanReport } from './KeywordScanReport.tsx'
 
-type Report = 'overview' | 'orphans' | 'high-impact' | 'duplicates' | 'connection-health' | 'schema-coverage' | 'pipeline-depth'
+type Report = 'overview' | 'orphans' | 'high-impact' | 'duplicates' | 'connection-health' | 'schema-coverage' | 'pipeline-depth' | 'keyword-scan'
 
 const REPORTS: { id: Report; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -24,6 +25,7 @@ const REPORTS: { id: Report; label: string }[] = [
   { id: 'connection-health', label: 'Connection Health' },
   { id: 'schema-coverage', label: 'Schema Coverage' },
   { id: 'pipeline-depth', label: 'Pipeline Depth' },
+  { id: 'keyword-scan', label: 'Keyword Scan' },
 ]
 
 type Props = {
@@ -102,6 +104,10 @@ export function DashboardLayout({ insights, onReset }: Props) {
 
       {activeReport === 'pipeline-depth' && (
         <PipelineDepthReport insights={insights} />
+      )}
+
+      {activeReport === 'keyword-scan' && (
+        <KeywordScanReport />
       )}
     </div>
   )

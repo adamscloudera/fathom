@@ -1,3 +1,4 @@
+import { LARGE_SCAN_THRESHOLD, estimateLineageSeconds, formatDuration } from '../logic/scanEstimate.ts'
 import { useState } from 'react'
 import { Search, X, Download, RefreshCw, Columns } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -112,7 +113,7 @@ function phaseLabel(phase: ScanPhase): string {
 
 export function KeywordScanReport() {
   const {
-    runScan, cancelScan, reset,
+    runScan, confirmScan, pendingScan, cancelScan, reset,
     columnResults, scanStatus, scanProgress, scanError, lastKeyword,
   } = useKeywordScan()
 
@@ -217,6 +218,27 @@ export function KeywordScanReport() {
             </button>
           )}
         </form>
+
+        {scanStatus === 'confirm' && pendingScan && (
+          <div className="rounded-lg border border-border bg-muted/10 p-3 space-y-2">
+            <p className="text-xs text-foreground">
+              <span className="font-medium">{pendingScan.assets.length.toLocaleString()}</span> columns match{' '}
+              <span className="font-mono">{pendingScan.keyword}</span>. Tracing lineage makes one request per column
+              (<span className="font-medium">{formatDuration(estimateLineageSeconds(pendingScan.assets.length))}</span> for all).
+            </p>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => confirmScan(LARGE_SCAN_THRESHOLD)} className="btn-primary text-xs">
+                Trace first {LARGE_SCAN_THRESHOLD} ({formatDuration(estimateLineageSeconds(LARGE_SCAN_THRESHOLD))})
+              </button>
+              <button type="button" onClick={() => confirmScan()} className="btn-ghost text-xs">
+                Trace all {pendingScan.assets.length.toLocaleString()}
+              </button>
+              <button type="button" onClick={cancelScan} className="btn-ghost text-xs">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {scanProgress && (
           <div className="space-y-1.5">

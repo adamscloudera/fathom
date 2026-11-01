@@ -29,7 +29,7 @@ export function CatalogSummaryCard({ insights }: Props) {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Stat label="Total objects" value={totalAssets} />
+        <Stat label="Catalog assets" value={totalAssets} />
         <Stat label="Tools" value={toolBreakdown.length} />
         <Stat label="Databases" value={distinctDatabases} />
         <Stat label="Schemas" value={distinctSchemas} />

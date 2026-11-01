@@ -35,13 +35,19 @@ type Props = {
 
 export function DashboardLayout({ insights, onReset }: Props) {
   const [activeReport, setActiveReport] = useState<Report>('overview')
+  // Some tenants return column nodes from the asset query, so the catalog count is not an object
+  // count. The Lineage Dashboard total is the number the Octopai UI calls objects.
+  const ld = insights.lineageDashboard
+  const dashboardObjects = ld ? ld.etl.total + ld.db.total + ld.report.total : null
 
   return (
     <div className="mt-6 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted">
           <span className="font-medium text-foreground">{insights.tenantName}.octopai.com</span>
-          {' — '}{insights.totalAssets.toLocaleString()} objects, {insights.lineageSampledCount} lineage samples
+          {' — '}{insights.totalAssets.toLocaleString()} catalog assets
+          {dashboardObjects !== null && `, ${dashboardObjects.toLocaleString()} lineage objects`}
+          {`, ${insights.lineageSampledCount} lineage samples`}
         </p>
         <button onClick={onReset} className="btn-ghost text-xs">
           New analysis

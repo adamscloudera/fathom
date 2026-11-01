@@ -1,4 +1,5 @@
 import { SweepGuard } from '../logic/sweepGuard.ts'
+import { LARGE_SCAN_THRESHOLD } from '../logic/scanEstimate.ts'
 import { useState, useRef } from 'react'
 import { octopai } from '../logic/octopaiApi.ts'
 import type { AssetItem } from '@adamscloudera/octopai-api'
@@ -7,7 +8,10 @@ import { useSessionStore } from '../stores/useSessionStore.ts'
 
 const CONCURRENCY = 10
 
-export type KeywordScanStatus = 'idle' | 'scanning' | 'done' | 'error'
+export type KeywordScanStatus = 'idle' | 'scanning' | 'confirm' | 'done' | 'error'
+
+// Matches found by the search phase that are waiting for the user to choose how many to trace.
+export type PendingScan = { keyword: string; assets: AssetItem[] }
 
 export type ScanPhase = 'searching' | 'lineage'
 
@@ -56,10 +60,12 @@ export function useKeywordScan() {
   const [scanProgress, setScanProgress] = useState<KeywordScanProgress | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
   const [lastKeyword, setLastKeyword] = useState<string>('')
+  const [pendingScan, setPendingScan] = useState<PendingScan | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  async function runScan(keyword: string) {
+  async function runScan(keyword: string, confirmed?: { assets: AssetItem[]; limit?: number }) {
     if (!accessToken || !keyword.trim()) return
+    setPendingScan(null)
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -69,41 +75,54 @@ export function useKeywordScan() {
     setScanError(null)
     setColumnResults([])
 
-    // Phase 1: server-side name search
-    const searchStart = Date.now()
-    setScanProgress({ phase: 'searching', done: 0, total: 0, startedAt: searchStart })
-
     let matchedAssets: AssetItem[] = []
-    try {
-      matchedAssets = await octopai.queryAssetsByName(
-        company,
-        accessToken,
-        [keyword],
-        controller.signal,
-      )
-    } catch (err) {
+    if (confirmed) {
+      // Phase 1 already ran; trace only the chosen slice of its matches.
+      matchedAssets = confirmed.limit ? confirmed.assets.slice(0, confirmed.limit) : confirmed.assets
+    } else {
+      // Phase 1: server-side name search
+      const searchStart = Date.now()
+      setScanProgress({ phase: 'searching', done: 0, total: 0, startedAt: searchStart })
+
+      try {
+        matchedAssets = await octopai.queryAssetsByName(
+          company,
+          accessToken,
+          [keyword],
+          controller.signal,
+        )
+      } catch (err) {
+        if (controller.signal.aborted) {
+          setScanStatus('idle')
+          setScanProgress(null)
+          return
+        }
+        const msg = err instanceof Error ? err.message : String(err)
+        setScanStatus('error')
+        setScanError(msg)
+        setScanProgress(null)
+        return
+      }
+
       if (controller.signal.aborted) {
         setScanStatus('idle')
         setScanProgress(null)
         return
       }
-      const msg = err instanceof Error ? err.message : String(err)
-      setScanStatus('error')
-      setScanError(msg)
-      setScanProgress(null)
-      return
-    }
 
-    if (controller.signal.aborted) {
-      setScanStatus('idle')
-      setScanProgress(null)
-      return
-    }
+      if (matchedAssets.length === 0) {
+        setScanStatus('done')
+        setScanProgress(null)
+        return
+      }
 
-    if (matchedAssets.length === 0) {
-      setScanStatus('done')
-      setScanProgress(null)
-      return
+      if (matchedAssets.length > LARGE_SCAN_THRESHOLD) {
+        // Ask before spending one lineage call per match.
+        setPendingScan({ keyword, assets: matchedAssets })
+        setScanStatus('confirm')
+        setScanProgress(null)
+        return
+      }
     }
 
     // Phase 2: bidirectional lineage for each matched asset (direction: 0, depth: 10)
@@ -210,8 +229,14 @@ export function useKeywordScan() {
     setScanStatus('done')
   }
 
+  function confirmScan(limit?: number) {
+    if (!pendingScan) return
+    runScan(pendingScan.keyword, { assets: pendingScan.assets, limit })
+  }
+
   function cancelScan() {
     abortRef.current?.abort()
+    setPendingScan(null)
     setScanStatus('idle')
     setScanProgress(null)
   }
@@ -225,6 +250,8 @@ export function useKeywordScan() {
 
   return {
     runScan,
+    confirmScan,
+    pendingScan,
     cancelScan,
     reset,
     columnResults,

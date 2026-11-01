@@ -104,3 +104,13 @@ test('name search returns raw hits when nothing is column-shaped', async () => {
   mockFetch(() => ({ json: { items: [{ _key: 'o1', _id: 'Octopai_Object_Nodes_x/o1' }] } }))
   assert.equal((await c.queryAssetsByName('co', 't', ['a'])).length, 1)
 })
+
+import { estimateLineageSeconds, formatDuration, LARGE_SCAN_THRESHOLD } from '../src/logic/scanEstimate.ts'
+
+test('scan estimate: rounds up and formats', () => {
+  assert.equal(estimateLineageSeconds(2565), 321)
+  assert.equal(formatDuration(45), '45s')
+  assert.equal(formatDuration(321), 'about 5 min')
+  assert.equal(formatDuration(7200), 'about 2.0 h')
+  assert.ok(LARGE_SCAN_THRESHOLD > 0)
+})

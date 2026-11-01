@@ -1,3 +1,4 @@
+import { SweepGuard } from '../logic/sweepGuard.ts'
 import { useState, useRef } from 'react'
 import { octopai } from '../logic/octopaiApi.ts'
 import type { AssetItem } from '@adamscloudera/octopai-api'
@@ -125,6 +126,7 @@ export function useKeywordScan() {
     const lineageStart = Date.now()
     setScanProgress({ phase: 'lineage', done: 0, total: matchedAssets.length, startedAt: lineageStart })
 
+    const guard = new SweepGuard()
     let completed = 0
     const updatedResults = [...initialResults]
 
@@ -140,6 +142,15 @@ export function useKeywordScan() {
           }))
         )
       )
+
+      try {
+        guard.record(settled)
+      } catch (err) {
+        setScanStatus('error')
+        setScanError(err instanceof Error ? err.message : String(err))
+        setScanProgress(null)
+        return
+      }
 
       for (const r of settled) {
         if (r.status !== 'fulfilled') continue

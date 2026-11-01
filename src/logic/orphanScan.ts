@@ -1,3 +1,4 @@
+import { SweepGuard } from './sweepGuard.ts'
 import type { AssetItem } from '@adamscloudera/octopai-api'
 import { octopai } from './octopaiApi.ts'
 import type { DeepOrphanEntry } from './types.ts'
@@ -59,6 +60,7 @@ export async function runOrphanScan(
   const total = candidates.length
   let done = 0
   const orphans: DeepOrphanEntry[] = []
+  const guard = new SweepGuard()
 
   for (let i = 0; i < candidates.length; i += CONCURRENCY) {
     if (signal.aborted) break
@@ -73,6 +75,7 @@ export async function runOrphanScan(
         })),
       ),
     )
+    guard.record(results)
     for (const r of results) {
       if (r.status !== 'fulfilled') continue
       const { asset, links } = r.value

@@ -17,6 +17,12 @@ function TokenExpiry({ expiry }: { expiry: string }) {
   return <span className="text-xs text-muted">Token expires in {hrs}h</span>
 }
 
+// Blank, zero, negative or non-numeric input means no limit.
+function parseScanLimit(raw: string): number | undefined {
+  const n = parseInt(raw, 10)
+  return Number.isFinite(n) && n >= 1 ? n : undefined
+}
+
 export function LoginPanel() {
   const {
     company, accessToken, accessExpiry, displayName, status, error,
@@ -29,6 +35,7 @@ export function LoginPanel() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [elapsed, setElapsed] = useState(0)
+  const [scanLimit, setScanLimit] = useState('')
 
   useEffect(() => {
     if (!scanProgress) { setElapsed(0); return }
@@ -157,8 +164,21 @@ export function LoginPanel() {
           </div>
         </div>
 
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            min={1}
+            value={scanLimit}
+            onChange={(e) => setScanLimit(e.target.value)}
+            placeholder="No limit"
+            disabled={isBusy}
+            className="w-28 px-2.5 py-1.5 text-sm rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+          />
+          <span className="text-xs text-muted whitespace-nowrap">objects</span>
+        </div>
+
         <button
-          onClick={runAnalysis}
+          onClick={() => runAnalysis(parseScanLimit(scanLimit))}
           disabled={isBusy}
           className={clsx('btn-primary', status === 'done' && 'opacity-80')}
         >

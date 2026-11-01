@@ -6,6 +6,7 @@ import {
 } from '../logic/analyzer.ts'
 import type { AssetItem } from '@adamscloudera/octopai-api'
 import type { LineageResult, LineageDashboard } from '../logic/types.ts'
+import { SweepGuard } from '../logic/sweepGuard.ts'
 import { useSessionStore } from '../stores/useSessionStore.ts'
 import { useInsightsStore } from '../stores/useInsightsStore.ts'
 
@@ -16,7 +17,7 @@ export function useAnalysis() {
   const { company, accessToken, setStatus, setScanProgress } = useSessionStore()
   const { setInsights, setRawAssets, setPartialCatalogStats, clearInsights } = useInsightsStore()
 
-  async function runAnalysis() {
+  async function runAnalysis(maxObjects?: number) {
     if (!accessToken) return
     clearInsights()
     analyzeAbortRef.current?.abort()
@@ -48,6 +49,7 @@ export function useAnalysis() {
           setPartialCatalogStats({ ...deriveCatalogStats(catalogAcc), totalAssets: assetsSoFarCount })
         },
         controller.signal,
+        maxObjects,
       )
     } catch (err) {
       if (controller.signal.aborted) { setScanProgress(null); return }
@@ -72,6 +74,7 @@ export function useAnalysis() {
     setScanProgress({ phase: 'lineage', done: 0, total: sampleKeys.length, startedAt: lineageStart })
 
     const lineageResults: LineageResult[] = []
+    const guard = new SweepGuard()
     let completed = 0
 
     for (let batch = 0; batch < sampleKeys.length; batch += CONCURRENCY) {
@@ -85,6 +88,13 @@ export function useAnalysis() {
           }))
         )
       )
+      try {
+        guard.record(settled)
+      } catch (err) {
+        setScanProgress(null)
+        setStatus('error', err instanceof Error ? err.message : String(err))
+        return
+      }
       for (const r of settled) {
         if (r.status === 'fulfilled') {
           const { key, raw } = r.value

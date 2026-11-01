@@ -16,6 +16,7 @@ export type OctopaiClient = {
     token: string,
     onProgress?: (fetched: number, pageItems: AssetItem[]) => void,
     signal?: AbortSignal,
+    maxObjects?: number,
   ): Promise<AssetItem[]>
   // Fetch a small batch (200) for building the connectionName → connectionId index.
   queryAssetsForIndex(company: string, token: string, signal?: AbortSignal): Promise<AssetItem[]>
@@ -116,10 +117,16 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
       })
       if (!res.ok) {
         const text = await res.text().catch(() => '')
+        // A WAF or proxy block returns an HTML page; do not dump markup into the UI.
+        if (/^\s*</.test(text)) {
+          throw new Error(`HTTP ${res.status}: request blocked by a firewall or proxy (HTML response).`)
+        }
         throw new Error(`HTTP ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`)
       }
-      const data = await res.json() as T
-      return data
+      // The API answers some out-of-range inputs (limit/offset/depth <= 0) with 204 and no body.
+      const raw = res.status === 204 ? '' : await res.text()
+      if (!raw.trim()) return {} as T
+      return JSON.parse(raw) as T
     } catch (err) {
       if ((err as { name?: string })?.name === 'AbortError') {
         if (signal?.aborted) throw new Error('Request cancelled.')
@@ -173,7 +180,7 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
   }
 
   function normalizeResponse(resp: AssetsQueryResponse): AssetsQueryResponse {
-    return { ...resp, items: resp.items.map(normalizeItem) }
+    return { ...resp, items: (resp.items ?? []).map(normalizeItem) }
   }
 
   async function queryAssets(
@@ -192,30 +199,85 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     return normalizeResponse(resp)
   }
 
+  // Offset paging shared by every list query. Stops on a short page, on a page that adds no
+  // new keys (server ignored offset), or once maxObjects is reached; never returns more than maxObjects.
+  async function fetchAllPages(
+    company: string,
+    token: string,
+    baseBody: Record<string, unknown>,
+    cancelMessage: string,
+    onProgress?: (fetched: number, pageItems: AssetItem[]) => void,
+    signal?: AbortSignal,
+    maxObjects?: number,
+  ): Promise<AssetItem[]> {
+    const cap = typeof maxObjects === 'number' && Number.isFinite(maxObjects) && maxObjects >= 1
+      ? Math.floor(maxObjects)
+      : undefined
+    const all: AssetItem[] = []
+    const seen = new Set<string>()
+    let offset = 0
+    while (true) {
+      if (signal?.aborted) throw new Error(cancelMessage)
+      const want = cap ? Math.min(DEFAULT_PAGE_SIZE, cap - all.length) : DEFAULT_PAGE_SIZE
+      const resp = await apiPost<AssetsQueryResponse>(
+        company,
+        '/api/v2.0/assets/query',
+        { ...baseBody, limit: want, offset },
+        token,
+        signal,
+      )
+      const page = normalizeResponse(resp)
+      const fresh: AssetItem[] = []
+      for (const item of page.items) {
+        const key = item._key
+        if (key != null) {
+          if (seen.has(key)) continue
+          seen.add(key)
+        }
+        all.push(item)
+        fresh.push(item)
+      }
+      onProgress?.(all.length, fresh)
+      if (fresh.length === 0 || page.items.length < want || (cap !== undefined && all.length >= cap)) break
+      offset += want
+    }
+    return all
+  }
+
+  // Tenants disagree on which assetType holds column nodes (the reference doc says 1; hmrc-poc
+  // returns them under 2 and object nodes under 1). Identify columns by shape, not by number.
+  function isColumnNode(item: AssetItem): boolean {
+    return /Column_Nodes/i.test((item as { _id?: string })._id ?? '') || Boolean(item.assetName)
+  }
+
+  // Try each query variant in order; return the first that yields column-shaped items. If none
+  // does, return the first non-empty result unfiltered so existing behavior is preserved.
+  async function fetchColumnNodes(
+    company: string,
+    token: string,
+    variants: Record<string, unknown>[],
+    cancelMessage: string,
+    onProgress?: (fetched: number) => void,
+    signal?: AbortSignal,
+  ): Promise<AssetItem[]> {
+    let firstNonEmpty: AssetItem[] | undefined
+    for (const body of variants) {
+      const items = await fetchAllPages(company, token, body, cancelMessage, onProgress, signal)
+      const columns = items.filter(isColumnNode)
+      if (columns.length > 0) return columns
+      if (!firstNonEmpty && items.length > 0) firstNonEmpty = items
+    }
+    return firstNonEmpty ?? []
+  }
+
   async function queryAllAssets(
     company: string,
     token: string,
     onProgress?: (fetched: number, pageItems: AssetItem[]) => void,
     signal?: AbortSignal,
+    maxObjects?: number,
   ): Promise<AssetItem[]> {
-    const all: AssetItem[] = []
-    let offset = 0
-    while (true) {
-      if (signal?.aborted) throw new Error('Asset fetch cancelled.')
-      const resp = await apiPost<AssetsQueryResponse>(
-        company,
-        '/api/v2.0/assets/query',
-        { limit: DEFAULT_PAGE_SIZE, offset, assetType: 2 },
-        token,
-        signal,
-      )
-      const page = normalizeResponse(resp)
-      all.push(...page.items)
-      onProgress?.(all.length, page.items)
-      if (page.items.length < DEFAULT_PAGE_SIZE) break
-      offset += DEFAULT_PAGE_SIZE
-    }
-    return all
+    return fetchAllPages(company, token, { assetType: 2 }, 'Asset fetch cancelled.', onProgress, signal, maxObjects)
   }
 
   async function queryAssetsForIndex(
@@ -372,24 +434,11 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     onProgress?: (fetched: number) => void,
     signal?: AbortSignal,
   ): Promise<AssetItem[]> {
-    const all: AssetItem[] = []
-    let offset = 0
-    while (true) {
-      if (signal?.aborted) throw new Error('Column asset fetch cancelled.')
-      const resp = await apiPost<AssetsQueryResponse>(
-        company,
-        '/api/v2.0/assets/query',
-        { limit: DEFAULT_PAGE_SIZE, offset, assetType: 1, IsMap: false },
-        token,
-        signal,
-      )
-      const page = normalizeResponse(resp)
-      all.push(...page.items)
-      onProgress?.(all.length)
-      if (page.items.length < DEFAULT_PAGE_SIZE) break
-      offset += DEFAULT_PAGE_SIZE
-    }
-    return all
+    return fetchColumnNodes(
+      company, token,
+      [{ assetType: 1, IsMap: false }, { assetType: 2 }],
+      'Column asset fetch cancelled.', onProgress, signal,
+    )
   }
 
   async function queryAssetsByName(
@@ -398,23 +447,13 @@ export function createOctopaiClient(proxyBase: string): OctopaiClient {
     names: string[],
     signal?: AbortSignal,
   ): Promise<AssetItem[]> {
-    const all: AssetItem[] = []
-    let offset = 0
-    while (true) {
-      if (signal?.aborted) throw new Error('Asset name search cancelled.')
-      const resp = await apiPost<AssetsQueryResponse>(
-        company,
-        '/api/v2.0/assets/query',
-        { AssetNames: names, assetType: 2, limit: DEFAULT_PAGE_SIZE, offset },
-        token,
-        signal,
-      )
-      const page = normalizeResponse(resp)
-      all.push(...page.items)
-      if (page.items.length < DEFAULT_PAGE_SIZE) break
-      offset += DEFAULT_PAGE_SIZE
-    }
-    return all
+    // An empty AssetNames filter makes the API return the whole catalog; treat it as no match.
+    if (names.length === 0) return []
+    return fetchColumnNodes(
+      company, token,
+      [{ AssetNames: names, assetType: 2 }, { AssetNames: names, assetType: 1 }],
+      'Asset name search cancelled.', undefined, signal,
+    )
   }
 
   return {

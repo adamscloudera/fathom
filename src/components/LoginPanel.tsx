@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plug, LogOut, Search, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react'
+import { Plug, LogOut, Search, AlertCircle, CheckCircle2, RefreshCw, Square } from 'lucide-react'
 import { clsx } from 'clsx'
 import { octopai } from '../logic/octopaiApi.ts'
 import { useSessionStore } from '../stores/useSessionStore.ts'
@@ -192,6 +192,13 @@ export function LoginPanel() {
             : status === 'done' ? 'Re-analyze'
             : 'Analyze'}
         </button>
+
+        {isBusy && status !== 'connecting' && (
+          <button onClick={cancelAnalysis} className="btn-ghost text-red-600">
+            <Square className="w-4 h-4" />
+            Stop
+          </button>
+        )}
 
         <button onClick={handleDisconnect} disabled={isBusy} className="btn-ghost">
           <LogOut className="w-4 h-4" />

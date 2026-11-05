@@ -24,6 +24,15 @@ export function useAnalysis() {
     const controller = new AbortController()
     analyzeAbortRef.current = controller
 
+    // A superseded run (a newer runAnalysis replaced this controller) must not
+    // touch shared state; only the run that is still current resets the UI.
+    const cancelled = () => {
+      if (analyzeAbortRef.current !== controller) return
+      setScanProgress(null)
+      setPartialCatalogStats(null)
+      setStatus('connected', null)
+    }
+
     const catalogStart = Date.now()
     setStatus('scanning', null)
     setScanProgress({ phase: 'catalog', done: 0, total: 0, startedAt: catalogStart })
@@ -52,7 +61,7 @@ export function useAnalysis() {
         maxObjects,
       )
     } catch (err) {
-      if (controller.signal.aborted) { setScanProgress(null); return }
+      if (controller.signal.aborted) { cancelled(); return }
       const msg = err instanceof Error ? err.message : String(err)
       setScanProgress(null)
       setStatus('error', msg)
@@ -60,7 +69,7 @@ export function useAnalysis() {
     }
 
     if (controller.signal.aborted || analyzeAbortRef.current !== controller) {
-      setScanProgress(null)
+      cancelled()
       return
     }
 
@@ -88,6 +97,7 @@ export function useAnalysis() {
           }))
         )
       )
+      if (controller.signal.aborted) break
       try {
         guard.record(settled)
       } catch (err) {
@@ -110,7 +120,7 @@ export function useAnalysis() {
     }
 
     if (controller.signal.aborted || analyzeAbortRef.current !== controller) {
-      setScanProgress(null)
+      cancelled()
       return
     }
 
@@ -160,6 +170,10 @@ export function useAnalysis() {
       }
     }
 
+    if (controller.signal.aborted || analyzeAbortRef.current !== controller) {
+      cancelled()
+      return
+    }
     setScanProgress(null)
 
     const insights = analyze(
